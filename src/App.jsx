@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Monitor, MessageCircle, Users, UserRound, Search, Settings, Minus, Square,
@@ -79,6 +78,80 @@ function App() {
       return;
     }
     let alive = true;
+    (async () => {
+      const user = session.user;
+      const fallbackName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Internet Friend';
+      const { data, error } = await supabase.from('profiles')
+        .upsert({ id: user.id, display_name: fallbackName }, { onConflict: 'id' })
+        .select().single();
+      if (alive) {
+        if (error) showNotice(`Profile setup: ${error.message}`);
+        setProfile(data || { id: user.id, display_name: fallbackName });
+        setNickname(data?.display_name || fallbackName);
+        localStorage.setItem('i2008-nickname', data?.display_name || fallbackName);
+      }
+    })();
+    return () => { alive = false; };
+  }, [session, showNotice]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setConnectionLabel('Local demo mode');
+      return;
+    }
+    if (!session) {
+      setConnectionLabel('Sign in to connect');
+      return;
+    }
+    setConnectionLabel('Connecting live…');
+    const channel = supabase.channel(`presence:${session.user.id}`, {
+      config: { presence: { key: session.user.id } }
+    });
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState();
+      const ids = Object.keys(state);
+      setOnlineIds(ids);
+      setOnlineCount(ids.length);
+    }).subscribe((state) => {
+      if (state === 'SUBSCRIBED') {
+        channel.track({ display_name: nickname || profile?.display_name || 'Internet Friend', status, online_at: new Date().toISOString() });
+        setConnectionLabel('Connected');
+      } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
+        setConnectionLabel('Connection issue');
+      }
+    });
+    return () => { supabase.removeChannel(channel); };
+  }, [session, nickname, profile, status]);
+
+  useEffect(() => {
+    if (!session || !supabase) return;
+    let alive = true;
+    (async () => {
+      const { data: f1 } = await supabase.from('friendships').select('user_a,user_b').or(`user_a.eq.${session.user.id},user_b.eq.${session.user.id}`);
+      const ids = (f1 || []).map(f => f.user_a === session.user.id ? f.user_b : f.user_a);
+      if (ids.length) {
+        const { data: p } = await supabase.from('profiles').select('id,display_name,mood').in('id', ids);
+        if (alive) setFriends(p || []);
+      } else if (alive) setFriends([]);
+      const { data: req } = await supabase.from('friend_requests')
+        .select('id,sender_id,created_at').eq('receiver_id', session.user.id).eq('status', 'pending');
+      if (req?.length) {
+        const { data: people } = await supabase.from('profiles').select('id,display_name').in('id', req.map(r => r.sender_id));
+        if (alive) setFriendRequests(req.map(r => ({ ...r, person: people?.find(p => p.id === r.sender_id) })));
+      } else if (alive) setFriendRequests([]);
+    })();
+    return () => { alive = false; };
+  }, [session, notice]);
+
+  const roomMessages = messages[activeRoom] || [];
+  const pushMessage = useCallback((room, message) => {
+    setMessages(prev => ({ ...prev, [room]: [...(prev[room] || []), message].slice(-300) }));
+  }, []);
+
+  useEffect(() => {
+    if (!session || !supabase) return;
+    let alive = true;
+    const room = activeRoom;
     (async () => {
       const user = session.user;
       const fallbackName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Internet Friend';
@@ -260,6 +333,220 @@ function App() {
     } catch (err) { setAuthError(err.message || 'Could not sign in.'); }
     finally { setAuthBusy(false); }
   };
+
+  const signOut = async () => {
+    if (supabase && session) await supabase.auth.signOut();
+    setSession(null); setProfile(null); setGuestMode(false); setNickname('');
+    localStorage.removeItem('i2008-nickname');
+    setAuthPanel('welcome'); showNotice('Signed out.');
+  };
+
+  const startRandomChat = async () => {
+    if (!session) {
+      setRandomState('login');
+      showNotice('Random stranger matching needs a signed-in account and live backend.');
+      return;
+    }
+    setRandomPartner(null); setMatchId(null);
+    const { data, error } = await supabase.rpc('find_random_match');
+    if (error) {
+      setRandomState('idle');
+      return showNotice(`Matching unavailable: ${error.message}. Deploy the database SQL first.`);
+    }
+    if (data?.status === 'matched') {
+      setRandomState('matched'); setMatchId(data.match_id);
+      setRandomPartner({ id: data.partner_id, name: data.partner_name || 'Internet Friend' });
+    } else {
+      setRandomState('searching');
+      showNotice('You are in the queue. Another available user is needed to match.');
+    }
+  };
+
+  const cancelRandomChat = async () => {
+    if (session && supabase) {
+      const { error } = await supabase.rpc('leave_random_match');
+      if (error) showNotice(error.message);
+    }
+    setRandomState('idle'); setRandomPartner(null); setRandomMessages([]); setMatchId(null);
+  };
+
+  const sendRandomMessage = async (event) => {
+    event.preventDefault();
+    const body = input.trim();
+    if (!body || !matchId) return;
+    const { error } = await supabase.from('random_match_messages').insert({ match_id: matchId, sender_id: session.user.id, body });
+    if (error) return showNotice(error.message);
+    setRandomMessages(prev => [...prev, { id: localId(), mine: true, name: nickname, body, time: nowTime() }]);
+    setInput('');
+  };
+
+  useEffect(() => {
+    if (!session || !matchId || !supabase) return;
+    const channel = supabase.channel(`random-match:${matchId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'random_match_messages', filter: `match_id=eq.${matchId}` }, async ({ new: m }) => {
+        if (m.sender_id === session.user.id) return;
+        setRandomMessages(prev => [...prev, { id: m.id, mine: false, name: randomPartner?.name || 'Stranger', body: m.body, time: nowTime() }]);
+      }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session, matchId, randomPartner]);
+
+  const sendFriendRequest = async () => {
+    const target = friendSearch.trim();
+    if (!session) return showNotice('Sign in to add permanent friends.');
+    if (!target) return showNotice('Enter the exact profile ID of the person you want to add.');
+    if (target === session.user.id) return showNotice('You cannot add yourself.');
+    const { error } = await supabase.from('friend_requests').insert({ sender_id: session.user.id, receiver_id: target });
+    if (error) return showNotice(error.message);
+    setFriendSearch('');
+    showNotice('Friend request sent.');
+  };
+
+  const respondFriend = async (request, accept) => {
+    const { error } = await supabase.from('friend_requests').update({ status: accept ? 'accepted' : 'rejected' }).eq('id', request.id);
+    if (error) return showNotice(error.message);
+    if (accept) {
+      const a = [session.user.id, request.sender_id].sort();
+      const { error: friendError } = await supabase.from('friendships').insert({ user_a: a[0], user_b: a[1] });
+      if (friendError) return showNotice(friendError.message);
+    }
+    setFriendRequests(prev => prev.filter(r => r.id !== request.id));
+    showNotice(accept ? 'Friend added!' : 'Request declined.');
+  };
+
+  const openFriend = (friend) => {
+    setActiveApp('friends');
+    setNotice(`Private friend chat for ${friend.display_name} is included in the schema; complete DM UI is marked as next integration in README.`);
+  };
+
+  const currentRoom = ROOMS.find(r => r.id === activeRoom) || ROOMS[0];
+  const windowTitle = activeApp === 'messenger' ? 'Internet Messenger' :
+    activeApp === 'random' ? 'Random Stranger Chat' :
+    activeApp === 'rooms' ? 'Chatrooms' :
+    activeApp === 'friends' ? 'Buddy List' :
+    activeApp === 'profile' ? 'My Profile' : 'Internet 2008';
+
+  return (
+    <main className="desktop">
+      <div className="desktop-wallpaper" />
+      <header className="top-strip">
+        <div className="brand"><span className="brand-icon"><Monitor size={16}/></span><span>INTERNET <b>2008</b></span></div>
+        <div className="top-center"><span className={`connection-dot ${connectionLabel === 'Connected' ? 'live' : ''}`}/>{connectionLabel}</div>
+        <div className="top-actions">
+          <button className="icon-button" title="Toggle sound" onClick={() => setSoundOn(v => !v)}>{soundOn ? <Volume2 size={16}/> : <VolumeX size={16}/>}</button>
+          <button className="icon-button" title="Settings" onClick={() => setShowSettings(v => !v)}><Settings size={16}/></button>
+          <span className="clock">{nowTime()}</span>
+        </div>
+      </header>
+
+      <section className="desktop-icons">
+        <button className="desktop-icon" onClick={() => { setActiveApp('messenger'); setWindowMinimized(false); }}><span className="app-icon messenger-icon"><MessageCircle/></span><span>Messenger</span></button>
+        <button className="desktop-icon" onClick={() => { setActiveApp('rooms'); setWindowMinimized(false); }}><span className="app-icon rooms-icon"><Globe/></span><span>Chatrooms</span></button>
+        <button className="desktop-icon" onClick={() => { setActiveApp('random'); setWindowMinimized(false); }}><span className="app-icon random-icon"><Search/></span><span>Find Stranger</span></button>
+        <button className="desktop-icon" onClick={() => { setActiveApp('friends'); setWindowMinimized(false); }}><span className="app-icon friends-icon"><Users/></span><span>Buddy List</span></button>
+        <button className="desktop-icon" onClick={() => { setActiveApp('profile'); setWindowMinimized(false); }}><span className="app-icon profile-icon"><UserRound/></span><span>My Profile</span></button>
+        <button className="desktop-icon" onClick={() => showNotice('Mystery file #001: “Someone is still online… even when the café is closed.” More clues coming soon.')}><span className="app-icon file-icon"><Terminal/></span><span>secret.txt</span></button>
+      </section>
+
+      {!windowMinimized && (
+        <section className={`app-window ${windowMaximized ? 'maximized' : ''}`} aria-label={windowTitle}>
+          <div className="titlebar">
+            <div className="titlebar-name"><span className="mini-app-icon"><MessageCircle size={15}/></span>{windowTitle}</div>
+            <div className="window-controls">
+              <button onClick={() => setWindowMinimized(true)} aria-label="Minimize"><Minus size={15}/></button>
+              <button onClick={() => setWindowMaximized(v => !v)} aria-label="Maximize"><Square size={12}/></button>
+              <button className="close-control" onClick={() => setWindowMinimized(true)} aria-label="Close"><X size={15}/></button>
+            </div>
+          </div>
+          <div className="menu-bar"><span>File</span><span>Edit</span><span>View</span><span>Tools</span><span>Help</span><span className="menu-right"><Wifi size={12}/> {onlineCount} online</span></div>
+
+          {activeApp === 'messenger' && (
+            <div className="messenger-layout">
+              <aside className="sidebar">
+                <div className="profile-card">
+                  <div className="avatar">{(nickname || 'I').slice(0,1).toUpperCase()}</div>
+                  <div className="profile-text"><b>{nickname || 'InternetGuest'}</b><span><i className="presence-green"/> {status}</span></div>
+                  <button className="tiny-button" onClick={() => setShowSettings(true)}><Settings size={14}/></button>
+                </div>
+                <div className="sidebar-heading">CHATROOMS <span>{ROOMS.length}</span></div>
+                {ROOMS.map(room => {
+                  const Icon = room.icon;
+                  return <button key={room.id} className={`room-row ${activeRoom === room.id ? 'selected' : ''}`} onClick={() => { setActiveRoom(room.id); setActiveApp('messenger'); setUnread(prev => ({...prev,[room.id]:0})); }}>
+                    <span className="room-symbol" style={{background: room.color}}><Icon size={15}/></span>
+                    <span className="room-info"><b>{room.name}</b><small>{room.description}</small></span>
+                    {unread[room.id] > 0 && <span className="unread">{unread[room.id]}</span>}
+                  </button>;
+                })}
+                <div className="sidebar-heading">YOUR SHORTCUTS</div>
+                <button className="nav-row" onClick={() => setActiveApp('random')}><Search size={16}/> Random stranger <ChevronRight size={14}/></button>
+                <button className="nav-row" onClick={() => setActiveApp('friends')}><Users size={16}/> Buddy list <ChevronRight size={14}/></button>
+                <div className="sidebar-bottom"><span className="tiny-online"/>{onlineCount} friend{onlineCount === 1 ? '' : 's'} online <span className="demo-pill">{isSupabaseConfigured ? 'LIVE' : 'DEMO'}</span></div>
+              </aside>
+              <section className="chat-panel">
+                <div className="chat-heading">
+                  <div className="room-symbol large" style={{background: currentRoom.color}}><currentRoom.icon size={20}/></div>
+                  <div><h2>{currentRoom.name}</h2><p>{currentRoom.description}</p></div>
+                  <button className="icon-button" title="Room details" onClick={() => showNotice('Be kind. No spam, harassment or sharing private information.')}><ShieldAlert size={17}/></button>
+                </div>
+                <div className="notice-bar"><Radio size={14}/> Welcome back to the old internet. Be kind to each other.</div>
+                <div className="messages-area">
+                  {roomMessages.length === 0 && <div className="empty-chat"><div className="empty-illustration">☕</div><h3>It’s quiet in here… for now.</h3><p>Say hi and start the conversation.</p><span className="empty-caption">“u there?” — 2008, probably</span></div>}
+                  {roomMessages.map(m => <article className={`message ${m.mine ? 'mine' : ''}`} key={m.id}>
+                    <div className="message-avatar">{(m.name || '?').slice(0,1).toUpperCase()}</div>
+                    <div className="message-content"><div className="message-meta"><b>{m.name}{m.mine ? ' (you)' : ''}</b><time>{m.time}</time></div><div className="message-bubble">{m.body}</div></div>
+                  </article>)}
+                  <div ref={endRef}/>
+                </div>
+                <form className="composer" onSubmit={sendRoomMessage}>
+                  {showEmoji && <div className="emoji-picker">{EMOJIS.map(e => <button type="button" key={e} onClick={() => setInput(v => v + e)}>{e}</button>)}</div>}
+                  <div className="composer-tools"><button type="button" onClick={() => setShowEmoji(v => !v)} title="Emojis"><Smile size={17}/></button><span>Message {currentRoom.name}</span><span className="char-count">{input.length}/1000</span></div>
+                  <div className="composer-bottom"><textarea value={input} maxLength={1000} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendRoomMessage(e); } }} placeholder="Type a message… (Enter to send)" rows={2}/><button className="send-button" type="submit" disabled={!input.trim()}><Send size={17}/><span>Send</span></button></div>
+                </form>
+              </section>
+            </div>
+          )}
+
+          {activeApp === 'rooms' && <div className="page-panel"><div className="page-title"><Globe/><div><h2>Public chatrooms</h2><p>Find your corner of the old internet.</p></div></div><div className="room-grid">{ROOMS.map(room => { const Icon = room.icon; return <button key={room.id} className="room-card" onClick={() => { setActiveRoom(room.id); setActiveApp('messenger'); }}><span className="room-symbol large" style={{background:room.color}}><Icon/></span><h3>{room.name}</h3><p>{room.description}</p><span className="room-card-bottom"><span className="tiny-online"/> Join room <ChevronRight size={14}/></span></button>; })}</div><p className="page-footnote">Public rooms are visible to signed-in users with access. Keep personal details private.</p></div>}
+
+          {activeApp === 'random' && <div className="page-panel random-page"><div className="page-title"><Search/><div><h2>Random stranger chat</h2><p>Meet someone you haven’t met before.</p></div></div>
+            <div className="random-card"><div className="random-orbit"><div className="orbit-dot dot-a"/><div className="orbit-dot dot-b"/><div className="orbit-dot dot-c"/><div className="orbit-center"><MessageCircle size={34}/></div></div>
+              {randomState === 'idle' && <><h3>Somewhere, someone is online.</h3><p>Say hello to a random person. You can leave or report at any time.</p><button className="primary-button" onClick={startRandomChat}><Search size={16}/> Find someone</button></>}
+              {randomState === 'searching' && <><h3>Looking for someone…</h3><p>Waiting for another available, signed-in person.</p><div className="loading-dots"><i/><i/><i/></div><button className="secondary-button" onClick={cancelRandomChat}>Cancel search</button></>}
+              {randomState === 'login' && <><h3>Sign in to meet people</h3><p>Random matching requires an account and live backend so we can apply safety rules.</p><button className="primary-button" onClick={() => {setAuthPanel('welcome');setShowSettings(true);}}>Account settings</button><button className="secondary-button" onClick={() => setRandomState('idle')}>Back</button></>}
+              {randomState === 'matched' && <><h3>You’re connected!</h3><p>Talking to {randomPartner?.name || 'an Internet Friend'}</p><div className="random-transcript">{randomMessages.map(m=><div key={m.id} className={m.mine?'mine':''}><b>{m.name}:</b> {m.body}</div>)}</div><form className="random-compose" onSubmit={sendRandomMessage}><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Say hello…"/><button className="primary-button"><Send size={15}/></button></form><div className="random-actions"><button className="secondary-button" onClick={cancelRandomChat}><LogOut size={14}/> Leave</button><button className="secondary-button" onClick={() => showNotice('Report flow: connect your moderation review process before public launch.')}><ShieldAlert size={14}/> Report</button></div></>}
+            </div><div className="safety-note"><LockKeyhole size={16}/><span><b>Your safety matters.</b> Don’t share passwords, address, phone number or payment details. Block/report features should be enabled before public launch.</span></div>
+          </div>}
+
+          {activeApp === 'friends' && <div className="page-panel"><div className="page-title"><Users/><div><h2>Buddy list</h2><p>Your internet friends, wherever they are.</p></div></div>
+            {!session && <div className="inline-warning"><LockKeyhole size={18}/><div><b>Permanent friends need an account.</b><p>Guest mode only saves this session locally.</p></div><button className="secondary-button" onClick={()=>setShowSettings(true)}>Sign in</button></div>}
+            <form className="friend-add" onSubmit={e=>{e.preventDefault();sendFriendRequest();}}><input value={friendSearch} onChange={e=>setFriendSearch(e.target.value)} placeholder="Enter a friend's profile ID"/><button className="primary-button" disabled={!session}><UserPlus size={15}/> Add friend</button></form>
+            {friendRequests.length>0 && <><h3 className="section-label">FRIEND REQUESTS</h3>{friendRequests.map(req=><div className="friend-row" key={req.id}><div className="avatar small">{(req.person?.display_name||'?')[0]}</div><div className="friend-info"><b>{req.person?.display_name||'Internet Friend'}</b><small>Wants to be your friend</small></div><button className="accept-button" onClick={()=>respondFriend(req,true)}><UserCheck size={15}/></button><button className="decline-button" onClick={()=>respondFriend(req,false)}><X size={15}/></button></div>)}</>}
+            <h3 className="section-label">YOUR FRIENDS · {friends.length}</h3>
+            {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" onClick={()=>openFriend(friend)}><MessageCircle size={15}/> Message</button></div>)}
+            {friends.length===0 && friendRequests.length===0 && <div className="empty-state"><Users size={30}/><h3>Your buddy list is waiting.</h3><p>Sign in and add friends by their profile ID.</p></div>}
+          </div>}
+
+          {activeApp === 'profile' && <div className="page-panel profile-page"><div className="page-title"><UserRound/><div><h2>My profile</h2><p>Your little corner of the internet.</p></div></div><div className="profile-edit-card"><div className="avatar big">{(nickname||'I')[0].toUpperCase()}</div><label>Display name<input maxLength={24} value={nickname} onChange={e=>setNickname(e.target.value)}/></label><label>What are you up to?<input maxLength={80} value={statusText} onChange={e=>setStatusText(e.target.value)}/></label><label>Availability<select value={status} onChange={e=>setStatus(e.target.value)}><option>Available</option><option>Away</option><option>Busy</option><option>Invisible</option></select></label><button className="primary-button" onClick={async()=>{localStorage.setItem('i2008-nickname',nickname);if(session){const {error}=await supabase.from('profiles').update({display_name:nickname,mood:statusText}).eq('id',session.user.id);if(error)return showNotice(error.message);}showNotice('Profile updated.');}}><UserCheck size={16}/> Save profile</button></div></div>}
+
+          <div className="statusbar"><span><span className="tiny-online"/> Ready</span><span>{session ? `Signed in: ${nickname}` : 'Guest session'}</span><span>Internet 2008 v1.0</span></div>
+        </section>
+      )}
+
+      {windowMinimized && <button className="restore-window" onClick={() => setWindowMinimized(false)}><MessageCircle size={16}/> {windowTitle}</button>}
+
+      <footer className="taskbar"><button className="start-button" onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><span className="start-orb"><Monitor size={16}/></span><b>Start</b></button><div className="taskbar-divider"/><button className={`taskbar-app ${activeApp==='messenger'?'active':''}`} onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><MessageCircle size={15}/> Messenger</button><button className={`taskbar-app ${activeApp==='random'?'active':''}`} onClick={()=>{setActiveApp('random');setWindowMinimized(false);}}><Search size={15}/> Random Chat</button><div className="taskbar-spacer"/><div className="system-tray"><span className="tray-status"><span className="tiny-online"/>{session?'Online':'Guest'}</span><span>{nowTime()}</span></div></footer>
+
+      {showSettings && <div className="modal-backdrop" onClick={()=>setShowSettings(false)}><section className="settings-modal" onClick={e=>e.stopPropagation()}><div className="modal-title"><div><Settings size={18}/> Account & settings</div><button className="icon-button" onClick={()=>setShowSettings(false)}><X size={17}/></button></div>
+        {session ? <div className="signed-in-card"><div className="avatar">{(nickname||'I')[0]}</div><div><b>{nickname}</b><p>{session.user.email}</p><small>Account connected</small></div><button className="secondary-button" onClick={signOut}><LogOut size={15}/> Sign out</button></div> : <><div className="auth-tabs"><button className={authPanel!=='signup'?'selected':''} onClick={()=>{setAuthPanel('login');setAuthError('');}}>Sign in</button><button className={authPanel==='signup'?'selected':''} onClick={()=>{setAuthPanel('signup');setAuthError('');}}>Create account</button></div>
+          {authPanel==='welcome' || authPanel==='guest' ? <div className="auth-form"><h3>Welcome to Internet 2008</h3><p>Choose a nickname to explore the desktop. Guest mode is local-only.</p><label>Nickname<input maxLength={24} value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="e.g. dialup_dreamer"/></label><button className="primary-button full" onClick={()=>{enterGuest();setShowSettings(false);}}>Enter as guest</button><div className="auth-divider">or create an account</div><button className="secondary-button full" onClick={()=>setAuthPanel('signup')}>Create account / Sign in</button></div> :
+          <form className="auth-form" onSubmit={e=>signIn(e,authPanel==='signup'?'signup':'login')}><h3>{authPanel==='signup'?'Create your account':'Welcome back'}</h3><p>Accounts let you use live rooms, friends and matching.</p>{authPanel==='signup'&&<label>Display name<input maxLength={24} value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="Your nickname"/></label>}<label>Email<input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} placeholder="you@example.com"/></label><label>Password<input type="password" minLength={8} required value={authPassword} onChange={e=>setAuthPassword(e.target.value)} placeholder="At least 8 characters"/></label><button className="primary-button full" disabled={authBusy}>{authBusy?'Please wait…':authPanel==='signup'?'Create account':'Sign in'}</button>{authError&&<p className="auth-error">{authError}</p>}</form>}</>}
+        <div className="settings-foot"><span className={`connection-dot ${connectionLabel==='Connected'?'live':''}`}/><span>{connectionLabel}</span><span className="settings-foot-spacer"/>{isSupabaseConfigured?'Backend configured':'Backend not configured'}</div>
+        <p className="privacy-small">Never share your password. Use block/report tools and keep personal information private. This is an open-source starter; review security and moderation before public launch.</p>
+      </section></div>}
+
+      {notice && <div className="toast"><Bell size={16}/>{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
+      <div className="desktop-watermark">YOU’VE GOT MAIL <span>✦</span></div>
+    </main>
+  );
 }
 
 export default App;
