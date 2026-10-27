@@ -260,3 +260,6 @@ function App() {
     } catch (err) { setAuthError(err.message || 'Could not sign in.'); }
     finally { setAuthBusy(false); }
   };
+}
+
+export default App;
