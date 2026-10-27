@@ -137,21 +137,70 @@ function App() {
         .select('id,sender_id,created_at').eq('receiver_id', session.user.id).eq('status', 'pending');
       if (req?.length) {
         const { data: people } = await supabase.from('profiles').select('id,display_name').in('id', req.map(r => r.sender_id));
-        if (alive) setFriendRequests(req.map(r => ({ ...r, person: people?.find(p => p.id === r.sender_id) })));
-      } else if (alive) setFriendRequests([]);
+          useEffect(() => {
+    if (!session || !supabase) return;
+
+    let alive = true;
+
+    (async () => {
+      const { data: f1 } = await supabase
+        .from('friendships')
+        .select('user_a,user_b')
+        .or(`user_a.eq.${session.user.id},user_b.eq.${session.user.id}`);
+
+      const ids = (f1 || []).map(f =>
+        f.user_a === session.user.id ? f.user_b : f.user_a
+      );
+
+      if (ids.length) {
+        const { data: p } = await supabase
+          .from('profiles')
+          .select('id,display_name,mood')
+          .in('id', ids);
+
+        if (alive) setFriends(p || []);
+      } else if (alive) {
+        setFriends([]);
+      }
+
+      const { data: req } = await supabase
+        .from('friend_requests')
+        .select('id,sender_id,created_at')
+        .eq('receiver_id', session.user.id)
+        .eq('status', 'pending');
+
+      if (req?.length) {
+        const { data: people } = await supabase
+          .from('profiles')
+          .select('id,display_name')
+          .in('id', req.map(r => r.sender_id));
+
+        if (alive) {
+          setFriendRequests(
+            req.map(r => ({
+              ...r,
+              person: people?.find(p => p.id === r.sender_id)
+            }))
+          );
+        }
+      } else if (alive) {
+        setFriendRequests([]);
+      }
     })();
-    return () => { alive = false; };
+
+    return () => {
+      alive = false;
+    };
   }, [session, notice]);
 
   const roomMessages = messages[activeRoom] || [];
-  const pushMessage = useCallback((room, message) => {
-    setMessages(prev => ({ ...prev, [room]: [...(prev[room] || []), message].slice(-300) }));
-  }, []);
 
-  useEffect(() => {
-    if (!session || !supabase) return;
-    let alive = true;
-    const room = activeRoom;
+  const pushMessage = useCallback((room, message) => {
+    setMessages(prev => ({
+      ...prev,
+      [room]: [...(prev[room] || []), message].slice(-300)
+    }));
+  }, []);
     (async () => {
       const user = session.user;
       const fallbackName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Internet Friend';
@@ -214,30 +263,93 @@ function App() {
         if (alive) setFriendRequests(req.map(r => ({ ...r, person: people?.find(p => p.id === r.sender_id) })));
       } else if (alive) setFriendRequests([]);
     })();
-    return () => { alive = false; };
-  }, [session, notice]);
-
-  const roomMessages = messages[activeRoom] || [];
-  const pushMessage = useCallback((room, message) => {
-    setMessages(prev => ({ ...prev, [room]: [...(prev[room] || []), message].slice(-300) }));
-  }, []);
-
-  useEffect(() => {
+      useEffect(() => {
     if (!session || !supabase) return;
+
     let alive = true;
     const room = activeRoom;
+
     (async () => {
-      const { data, error } = await supabase.from('messages').select('id,room_id,sender_id,body,created_at')
-        .eq('room_id', room).order('created_at', { ascending: true }).limit(100);
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id,room_id,sender_id,body,created_at')
+        .eq('room_id', room)
+        .order('created_at', { ascending: true })
+        .limit(100);
+
       if (alive && !error) {
         const ids = [...new Set((data || []).map(m => m.sender_id))];
-        const { data: people } = ids.length ? await supabase.from('profiles').select('id,display_name').in('id', ids) : { data: [] };
+
+        const { data: people } = ids.length
+          ? await supabase
+              .from('profiles')
+              .select('id,display_name')
+              .in('id', ids)
+          : { data: [] };
+
         const mapped = (data || []).map(m => ({
-          id: m.id, room: m.room_id, senderId: m.sender_id,
+          id: m.id,
+          room: m.room_id,
+          senderId: m.sender_id,
           name: people?.find(p => p.id === m.sender_id)?.display_name || 'Internet Friend',
-          body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          body: m.body,
+          time: new Date(m.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
           mine: m.sender_id === session.user.id
         }));
+
+        setMessages(prev => ({ ...prev, [room]: mapped }));
+      }
+    })();
+
+    const channel = supabase
+      .channel(`room:${room}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `room_id=eq.${room}`
+        },
+        async (payload) => {
+          const m = payload.new;
+          if (!alive || m.sender_id === session.user.id) return;
+
+          const { data: person } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', m.sender_id)
+            .maybeSingle();
+
+          pushMessage(room, {
+            id: m.id,
+            room,
+            senderId: m.sender_id,
+            name: person?.display_name || 'Internet Friend',
+            body: m.body,
+            time: nowTime(),
+            mine: false
+          });
+
+          setUnread(prev => ({
+            ...prev,
+            [room]: (prev[room] || 0) + (document.hidden ? 1 : 0)
+          }));
+        }
+      )
+      .subscribe();
+
+    realtimeRef.current.push(channel);
+
+    return () => {
+      alive = false;
+      supabase.removeChannel(channel);
+      realtimeRef.current = realtimeRef.current.filter(c => c !== channel);
+    };
+  }, [session, activeRoom, pushMessage]);
         setMessages(prev => ({ ...prev, [room]: mapped }));
       }
     })();
