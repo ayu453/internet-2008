@@ -1,18 +1,17 @@
 # INTERNET 2008
 
-A nostalgic retro internet experience inspired by the classic 2008 desktop era.
+A nostalgic, Windows-era inspired web desktop and messenger starter. React + Vite frontend with Supabase Auth, PostgreSQL, Realtime and a database-backed random matching scaffold.
 
-## Features
-- Retro desktop interface
-- Chat rooms
-- User accounts (Supabase setup required)
-- Friends and private messaging (backend integration required)
-- Mobile-friendly design
+## Quick start
 
-## Technology
-- React
-- Vite
-- Supabase
+```bash
+npm install
+cp .env.example .env
+npm run dev
+```
 
-## Status
-Development in progress. Complete the setup instructions in SETUP.md before deployment.
+Read [SETUP.md](./SETUP.md) before connecting a backend or launching publicly.
+
+## Security note
+
+Never expose Supabase service-role keys in client code. Review all SQL policies, complete the remaining private-friend-DM and match-state UX, and add moderation before public launch.
