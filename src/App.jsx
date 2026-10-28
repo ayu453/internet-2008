@@ -100,7 +100,7 @@ function App() {
       return;
     }
     if (!session) {
-      setConnectionLabel('Sign in to connect');
+      setConnectionLabel('Enter your name to connect');
       return;
     }
     setConnectionLabel('Connecting live…');
@@ -237,27 +237,40 @@ function App() {
     } catch {}
   };
 
-  const signIn = async (event, mode) => {
-    event.preventDefault();
-    setAuthBusy(true); setAuthError('');
-    if (!supabase) {
-      setAuthError('Supabase is not configured yet. Follow SETUP.md, or use Guest mode to explore the UI.');
-      setAuthBusy(false); return;
+  const signIn = async (event) => {
+    event?.preventDefault();
+    const name = (draftName || nickname).trim().slice(0, 24);
+    if (!name) {
+      setAuthError('Please enter your name first.');
+      return;
     }
+    if (!supabase) {
+      // Local-only fallback still lets the UI be explored without a backend.
+      setNickname(name);
+      localStorage.setItem('i2008-nickname', name);
+      setProfile({ id: `guest-${localId()}`, display_name: name });
+      setGuestMode(true);
+      setShowSettings(false);
+      setAuthError('');
+      showNotice('Name saved on this device. Live chat needs Supabase configured.');
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError('');
     try {
-      if (mode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({
-          email: authEmail, password: authPassword,
-          options: { data: { display_name: (draftName || authEmail.split('@')[0]).slice(0, 24) } }
-        });
-        if (error) throw error;
-        if (!data.session) setAuthError('Check your email for the confirmation link, then sign in.');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
-        if (error) throw error;
-      }
-    } catch (err) { setAuthError(err.message || 'Could not sign in.'); }
-    finally { setAuthBusy(false); }
+      const { data, error } = await supabase.auth.signInAnonymously({
+        options: { data: { display_name: name } }
+      });
+      if (error) throw error;
+      setNickname(name);
+      localStorage.setItem('i2008-nickname', name);
+      setShowSettings(false);
+      showNotice(`Welcome to Internet 2008, ${name}!`);
+    } catch (err) {
+      setAuthError(err.message || 'Could not start your chat session.');
+    } finally {
+      setAuthBusy(false);
+    }
   };
 
   const signOut = async () => {
@@ -270,7 +283,7 @@ function App() {
   const startRandomChat = async () => {
     if (!session) {
       setRandomState('login');
-      showNotice('Random stranger matching needs a signed-in account and live backend.');
+      showNotice('Enter your name first to use random matching.');
       return;
     }
     setRandomState('searching'); setRandomPartner(null); setMatchId(null);
@@ -462,9 +475,7 @@ function App() {
       <footer className="taskbar"><button className="start-button" onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><span className="start-orb"><Monitor size={16}/></span><b>Start</b></button><div className="taskbar-divider"/><button className={`taskbar-app ${activeApp==='messenger'?'active':''}`} onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><MessageCircle size={15}/> Messenger</button><button className={`taskbar-app ${activeApp==='random'?'active':''}`} onClick={()=>{setActiveApp('random');setWindowMinimized(false);}}><Search size={15}/> Random Chat</button><div className="taskbar-spacer"/><div className="system-tray"><span className="tray-status"><span className="tiny-online"/>{session?'Online':'Guest'}</span><span>{nowTime()}</span></div></footer>
 
       {showSettings && <div className="modal-backdrop" onClick={()=>setShowSettings(false)}><section className="settings-modal" onClick={e=>e.stopPropagation()}><div className="modal-title"><div><Settings size={18}/> Account & settings</div><button className="icon-button" onClick={()=>setShowSettings(false)}><X size={17}/></button></div>
-        {session ? <div className="signed-in-card"><div className="avatar">{(nickname||'I')[0]}</div><div><b>{nickname}</b><p>{session.user.email}</p><small>Account connected</small></div><button className="secondary-button" onClick={signOut}><LogOut size={15}/> Sign out</button></div> : <><div className="auth-tabs"><button className={authPanel!=='signup'?'selected':''} onClick={()=>{setAuthPanel('login');setAuthError('');}}>Sign in</button><button className={authPanel==='signup'?'selected':''} onClick={()=>{setAuthPanel('signup');setAuthError('');}}>Create account</button></div>
-          {authPanel==='welcome' || authPanel==='guest' ? <div className="auth-form"><h3>Welcome to Internet 2008</h3><p>Choose a nickname to explore the desktop. Guest mode is local-only.</p><label>Nickname<input maxLength={24} value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="e.g. dialup_dreamer"/></label><button className="primary-button full" onClick={()=>{enterGuest();setShowSettings(false);}}>Enter as guest</button><div className="auth-divider">or create an account</div><button className="secondary-button full" onClick={()=>setAuthPanel('signup')}>Create account / Sign in</button></div> :
-          <form className="auth-form" onSubmit={e=>signIn(e,authPanel==='signup'?'signup':'login')}><h3>{authPanel==='signup'?'Create your account':'Welcome back'}</h3><p>Accounts let you use live rooms, friends and matching.</p>{authPanel==='signup'&&<label>Display name<input maxLength={24} value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="Your nickname"/></label>}<label>Email<input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} placeholder="you@example.com"/></label><label>Password<input type="password" minLength={8} required value={authPassword} onChange={e=>setAuthPassword(e.target.value)} placeholder="At least 8 characters"/></label><button className="primary-button full" disabled={authBusy}>{authBusy?'Please wait…':authPanel==='signup'?'Create account':'Sign in'}</button>{authError&&<p className="auth-error">{authError}</p>}</form>}</>}
+        {session ? <div className="signed-in-card"><div className="avatar">{(nickname||'I')[0]}</div><div><b>{nickname}</b><p>Anonymous chat account</p><small>Session connected</small></div><button className="secondary-button" onClick={signOut}><LogOut size={15}/> Sign out</button></div> : <form className="auth-form" onSubmit={signIn}><h3>Welcome to Internet 2008</h3><p>Enter your name to start chatting. No email or password needed.</p><label>Your name<input maxLength={24} required value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="e.g. dialup_dreamer"/></label><button className="primary-button full" disabled={authBusy}>{authBusy?'Connecting…':'Start chatting'}</button>{authError&&<p className="auth-error">{authError}</p>}</form>}
         <div className="settings-foot"><span className={`connection-dot ${connectionLabel==='Connected'?'live':''}`}/><span>{connectionLabel}</span><span className="settings-foot-spacer"/>{isSupabaseConfigured?'Backend configured':'Backend not configured'}</div>
         <p className="privacy-small">Never share your password. Use block/report tools and keep personal information private. This is an open-source starter; review security and moderation before public launch.</p>
       </section></div>}
