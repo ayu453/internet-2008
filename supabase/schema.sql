@@ -211,6 +211,8 @@ declare
   partner_name text;
 begin
   if me is null then raise exception 'Sign in required'; end if;
+  -- Serialize matchmaking and leaving so a user cannot be claimed by overlapping requests.
+  perform pg_advisory_xact_lock(20081008::bigint);
   if exists (select 1 from random_matches where status='active' and me in (user_a,user_b)) then
     raise exception 'You already have an active match';
   end if;
@@ -244,6 +246,8 @@ as $$
 declare me uuid := auth.uid();
 begin
   if me is null then raise exception 'Sign in required'; end if;
+  -- Use the same lock as find_random_match to avoid leave/start races.
+  perform pg_advisory_xact_lock(20081008::bigint);
   delete from random_queue where user_id=me;
   update random_matches set status='ended',ended_at=now()
     where status='active' and me in (user_a,user_b);
