@@ -13,7 +13,7 @@ This package contains the React/Vite web app, retro desktop UI, Supabase client 
 - Friend request UI and database operations.
 - Private friend conversation screen and message history/realtime flow after the private messaging migration is applied.
 - Server-side random matching RPC and match chat history/realtime subscription after database setup.
-- Random-chat report and block actions after database setup; reports are stored in `public.reports` with recent chat context, and blocks are stored in `public.blocks` and excluded from future random matches.
+- Public-room message reports and random-chat report/block actions after database setup; reports are stored in `public.reports` with message context, and blocks are stored in `public.blocks` and excluded from future random matches.
 
 ## Important limitations before public launch
 
