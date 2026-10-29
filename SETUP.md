@@ -57,7 +57,7 @@ The app runs in local demo mode until `.env` is filled in.
 4. In Supabase SQL Editor, run all of `supabase/schema.sql`.
 5. For an existing project that already has the schema, run `supabase/migrations/002_friend_private_messages.sql` after the base schema to enable private friend conversations.
 6. Run `supabase/migrations/003_serialize_random_matchmaking.sql` to prevent overlapping match/leave RPCs from assigning a user to multiple active matches.
-7. Run `supabase/migrations/004_atomic_friend_request_response.sql` so accepting a request and creating its friendship succeed or fail together. Run `supabase/migrations/005_resend_friend_requests.sql` to safely allow re-sending rejected requests and prevent duplicate pending requests. Then run `supabase/migrations/006_secure_friend_request_updates.sql` to remove the unsafe direct-update policy from existing databases.
+7. Run `supabase/migrations/004_atomic_friend_request_response.sql` so accepting a request and creating its friendship succeed or fail together. Run `supabase/migrations/005_resend_friend_requests.sql` to safely allow re-sending rejected requests and prevent duplicate pending requests. Then run `supabase/migrations/006_secure_friend_request_updates.sql` to remove the unsafe direct-update policy from existing databases, and `supabase/migrations/007_manage_blocked_users.sql` to let users unblock accounts they blocked.
 8. In Supabase Dashboard → Authentication → Sign In / Providers, enable **Anonymous Sign-Ins**. Email confirmation is not needed for this name-only flow.
 9. Restart `npm run dev` after editing `.env`.
 10. Open the app on two separate browsers/devices, enter a display name in each, and test public room messages, random matching, and private messages between accepted friends.
@@ -79,6 +79,7 @@ The production static output is in `dist/`. Host it on a static host such as Ver
 - [ ] Verify RLS using two different accounts
 - [ ] Verify a third account cannot read private conversations or match messages
 - [ ] Verify reports can only be submitted by the reporting user and blocks prevent future matches in a multi-account test
+- [ ] Verify users can view and unblock their own blocked-user list
 - [ ] Verify friend-to-friend private messaging with two accounts and confirm a third account cannot read conversations
 - [ ] Verify queued users automatically transition to matched state when a second user joins
 - [x] Add user-facing report/block actions for random chat (requires the database schema)
