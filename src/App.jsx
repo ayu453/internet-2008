@@ -639,6 +639,31 @@ function App() {
     showNotice(accept ? 'Friend added!' : 'Request declined.');
   };
 
+  const reportRoomMessage = async (message) => {
+    if (!session || !supabase || !message?.senderId || message.mine) {
+      showNotice('Sign in to report messages.');
+      return;
+    }
+    const enteredReason = window.prompt('Why are you reporting this message?');
+    if (enteredReason === null) return;
+    const reason = enteredReason.trim().slice(0, 500);
+    if (reason.length < 3) {
+      showNotice('Please enter at least 3 characters so the report is useful.');
+      return;
+    }
+    const { error } = await supabase.from('reports').insert({
+      reporter_id: session.user.id,
+      reported_user_id: message.senderId,
+      reason,
+      context: `Room: ${message.room || activeRoom}\\nMessage: ${String(message.body || '').slice(0, 1500)}`
+    });
+    if (error) {
+      showNotice(`Report could not be submitted: ${error.message}`);
+      return;
+    }
+    showNotice('Message reported. Thank you for helping keep the room safe.');
+  };
+
   const reportRandomPartner = async () => {
     if (!session || !supabase || !randomPartner?.id) {
       showNotice('Sign in and connect to a chat before reporting.');
@@ -859,7 +884,7 @@ function App() {
                   {roomMessages.length === 0 && <div className="empty-chat"><div className="empty-illustration">☕</div><h3>It’s quiet in here… for now.</h3><p>Say hi and start the conversation.</p><span className="empty-caption">“u there?” — 2008, probably</span></div>}
                   {roomMessages.map(m => <article className={`message ${m.mine ? 'mine' : ''}`} key={m.id}>
                     <div className="message-avatar">{(m.name || '?').slice(0,1).toUpperCase()}</div>
-                    <div className="message-content"><div className="message-meta"><b>{m.name}{m.mine ? ' (you)' : ''}</b><time>{m.time}</time></div><div className="message-bubble">{m.body}</div></div>
+                    <div className="message-content"><div className="message-meta"><b>{m.name}{m.mine ? ' (you)' : ''}</b><time>{m.time}</time>{!m.mine && session && <button type="button" className="message-report" title="Report message" aria-label={`Report message from ${m.name}`} onClick={() => reportRoomMessage(m)}><ShieldAlert size={12}/></button>}</div><div className="message-bubble">{m.body}</div></div>
                   </article>)}
                   <div ref={endRef}/>
                 </div>
