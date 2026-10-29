@@ -427,22 +427,61 @@ function App() {
   const sendRandomMessage = async (event) => {
     event.preventDefault();
     const body = input.trim();
-    if (!body || !matchId) return;
-    const { error } = await supabase.from('random_match_messages').insert({ match_id: matchId, sender_id: session.user.id, body });
-    if (error) return showNotice(error.message);
-    setRandomMessages(prev => [...prev, { id: localId(), mine: true, name: nickname, body, time: nowTime() }]);
+    if (!body || !matchId || !session || !supabase) return;
+    if (body.length > 1000) return showNotice('Message is too long (max 1000 characters).');
+    const { data, error } = await supabase.from('random_match_messages')
+      .insert({ match_id: matchId, sender_id: session.user.id, body })
+      .select('id,created_at').single();
+    if (error) return showNotice(`Message not sent: ${error.message}`);
+    setRandomMessages(prev => {
+      if (prev.some(message => message.id === data.id)) return prev;
+      return [...prev, {
+        id: data.id, mine: true, name: nickname || 'You', body,
+        time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }];
+    });
     setInput('');
   };
 
   useEffect(() => {
     if (!session || !matchId || !supabase) return;
+    let alive = true;
+    const mergeMessages = (incoming) => {
+      setRandomMessages(prev => {
+        const byId = new Map([...prev, ...incoming].map(message => [message.id, message]));
+        return [...byId.values()].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).slice(-200);
+      });
+    };
+    (async () => {
+      const { data, error } = await supabase.from('random_match_messages')
+        .select('id,sender_id,body,created_at').eq('match_id', matchId)
+        .order('created_at', { ascending: true }).limit(200);
+      if (!alive) return;
+      if (error) {
+        showNotice(`Could not load random chat history: ${error.message}`);
+        return;
+      }
+      mergeMessages((data || []).map(message => ({
+        ...message, mine: message.sender_id === session.user.id,
+        name: message.sender_id === session.user.id ? (nickname || 'You') : (randomPartner?.name || 'Stranger'),
+        time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })));
+    })();
     const channel = supabase.channel(`random-match:${matchId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'random_match_messages', filter: `match_id=eq.${matchId}` }, async ({ new: m }) => {
-        if (m.sender_id === session.user.id) return;
-        setRandomMessages(prev => [...prev, { id: m.id, mine: false, name: randomPartner?.name || 'Stranger', body: m.body, time: nowTime() }]);
-      }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session, matchId, randomPartner]);
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'random_match_messages', filter: `match_id=eq.${matchId}` }, ({ new: message }) => {
+        if (!alive) return;
+        mergeMessages([{
+          ...message, mine: message.sender_id === session.user.id,
+          name: message.sender_id === session.user.id ? (nickname || 'You') : (randomPartner?.name || 'Stranger'),
+          time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+      }).subscribe(state => {
+        if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
+          if (alive) showNotice('Random chat live updates are unavailable. Check the Supabase Realtime setup.');
+        }
+      });
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [session, matchId, randomPartner, nickname]);
 
   const sendFriendRequest = async () => {
     const target = friendSearch.trim();
