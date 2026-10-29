@@ -312,7 +312,13 @@ function App() {
       try {
         const { data, error } = await supabase.rpc('get_random_match_status');
         if (error) throw error;
-        if (!alive || data?.status !== 'matched') return;
+        if (!alive) return;
+        if (data?.status === 'idle') {
+          setRandomState('idle');
+          showNotice('Your search queue ended. Please try again.');
+          return;
+        }
+        if (data?.status !== 'matched') return;
         setMatchId(data.match_id);
         setRandomPartner({ id: data.partner_id, name: data.partner_name || 'Internet Friend' });
         setRandomState('matched');
