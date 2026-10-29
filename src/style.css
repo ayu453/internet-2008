@@ -54,3 +54,11 @@
 .report-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 .report-modal-actions button{display:inline-flex;align-items:center;gap:6px}
 @media(max-width:600px){.report-modal{width:calc(100vw - 28px)}.report-modal-actions button{flex:1}}
+
+.blocked-users-card{margin-top:14px;padding:14px;background:#fff;border:1px solid #dbe4ec;border-radius:10px;box-shadow:0 3px 12px #243e5810}
+.blocked-users-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
+.blocked-users-heading h3{margin:0 0 4px;color:#344a62;font-size:12px}
+.blocked-users-heading p,.blocked-empty{margin:0;color:#8795a8;font-size:10px;line-height:1.45}
+.blocked-users-heading>span{display:grid;place-items:center;min-width:25px;height:25px;padding:0 6px;border-radius:20px;background:#f3f0eb;color:#78684e;font-size:10px;font-weight:800}
+.blocked-users-card .friend-row{border-top:1px solid #edf1f5}
+.blocked-empty{padding:12px 0 2px}
