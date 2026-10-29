@@ -464,7 +464,8 @@ function App() {
     // Clear user-scoped UI/cache so another person using this browser cannot see
     // the previous account's private conversation after sign-out.
     setSelectedFriend(null); setActiveConversationId(null); setDmMessages({});
-    setFriendRequests([]); setFriends([]);
+    setFriendRequests([]); setFriends([]); setInput(''); setShowEmoji(false);
+    setReportTarget(null); setReportReason(''); setReportBusy(false);
     setRandomState('idle'); setRandomPartner(null); setMatchId(null); setRandomMessages([]);
     setSession(null); setProfile(null); setGuestMode(false); setNickname('');
     localStorage.removeItem('i2008-nickname');
