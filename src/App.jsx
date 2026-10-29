@@ -47,6 +47,8 @@ function App() {
   const [randomMessages, setRandomMessages] = useState([]);
   const [matchId, setMatchId] = useState(null);
   const [friendSearch, setFriendSearch] = useState('');
+  const [friendSearchResults, setFriendSearchResults] = useState([]);
+  const [friendSearchBusy, setFriendSearchBusy] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authPanel, setAuthPanel] = useState('welcome');
@@ -417,6 +419,15 @@ function App() {
 
   const sendFriendRequest = async () => {
     const target = friendSearch.trim();
+    if (!session || !supabase) return showNotice('Sign in to add permanent friends.');
+    if (!target) return showNotice('Enter a display name to search.');
+    setFriendSearchBusy(true);
+    try {
+      // Accept either a display name or a profile UUID, so users do not need to know UUIDs.
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(target);
+      let query = supabase.from('profiles').select('id,display_name,mood').neq('id', session.user.id).limit(10);
+      query = isUuid ? query.eq('id', target) : query.ilike('display_name', `%${target.replace(/[\\%_]/g, '\\  const sendFriendRequest = async () => {
+    const target = friendSearch.trim();
     if (!session) return showNotice('Sign in to add permanent friends.');
     if (!target) return showNotice('Enter the exact profile ID of the person you want to add.');
     if (target === session.user.id) return showNotice('You cannot add yourself.');
@@ -424,6 +435,31 @@ function App() {
     if (error) return showNotice(error.message);
     setFriendSearch('');
     showNotice('Friend request sent.');
+  };')}%`);
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data?.length) {
+        setFriendSearchResults([]);
+        showNotice('No matching profiles found. Check the display name and try again.');
+        return;
+      }
+      setFriendSearchResults(data);
+      if (data.length === 1) showNotice(`Found ${data[0].display_name}. Tap Add beside the profile to send a request.`);
+      else showNotice(`Found ${data.length} profiles. Choose the correct person below.`);
+    } catch (error) {
+      showNotice(`Could not search profiles: ${error.message}`);
+    } finally {
+      setFriendSearchBusy(false);
+    }
+  };
+
+  const addFriendByProfile = async (person) => {
+    if (!session || !supabase || !person?.id) return showNotice('Sign in to add permanent friends.');
+    const { error } = await supabase.from('friend_requests').insert({ sender_id: session.user.id, receiver_id: person.id });
+    if (error) return showNotice(error.message);
+    setFriendSearchResults(prev => prev.filter(item => item.id !== person.id));
+    setFriendSearch('');
+    showNotice(`Friend request sent to ${person.display_name}.`);
   };
 
   const respondFriend = async (request, accept) => {
@@ -621,11 +657,12 @@ function App() {
             {selectedFriend && activeConversationId ? <section className="friend-dm-panel"><div className="friend-dm-header"><button className="secondary-button" onClick={() => { setSelectedFriend(null); setActiveConversationId(null); setInput(''); }}><ChevronRight size={15}/> Back to buddies</button><div className="friend-dm-person"><div className="avatar small">{(selectedFriend.display_name||'?')[0]}</div><div><b>{selectedFriend.display_name}</b><small>Private conversation</small></div></div></div><div className="friend-dm-transcript">{(dmMessages[activeConversationId] || []).map(m => <article className={`message ${m.mine ? 'mine' : ''}`} key={m.id}><div className="message-avatar">{(m.name||'?').slice(0,1).toUpperCase()}</div><div className="message-content"><div className="message-meta"><b>{m.name}{m.mine ? ' (you)' : ''}</b><time>{m.time}</time></div><div className="message-bubble">{m.body}</div></div></article>)}{!(dmMessages[activeConversationId] || []).length && <div className="empty-state"><MessageCircle size={28}/><h3>Say hello!</h3><p>This is a private conversation between you and {selectedFriend.display_name}.</p></div>}<div ref={endRef}/></div><form className="composer" onSubmit={sendFriendMessage}><div className="composer-tools"><span>Private message to {selectedFriend.display_name}</span><span className="char-count">{input.length}/1000</span></div><div className="composer-bottom"><textarea value={input} maxLength={1000} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendFriendMessage(e);}}} placeholder="Write a private message… (Enter to send)" rows={2}/><button className="send-button" type="submit" disabled={!input.trim()}><Send size={17}/><span>Send</span></button></div></form></section> : <>
 
             {!session && <div className="inline-warning"><LockKeyhole size={18}/><div><b>Permanent friends need an account.</b><p>Guest mode only saves this session locally.</p></div><button className="secondary-button" onClick={()=>setShowSettings(true)}>Sign in</button></div>}
-            <form className="friend-add" onSubmit={e=>{e.preventDefault();sendFriendRequest();}}><input value={friendSearch} onChange={e=>setFriendSearch(e.target.value)} placeholder="Enter a friend's profile ID"/><button className="primary-button" disabled={!session}><UserPlus size={15}/> Add friend</button></form>
+            <form className="friend-add" onSubmit={e=>{e.preventDefault();sendFriendRequest();}}><input value={friendSearch} onChange={e=>{setFriendSearch(e.target.value);setFriendSearchResults([]);}} placeholder="Search by display name or profile ID"/><button className="primary-button" disabled={!session||friendSearchBusy}>{friendSearchBusy ? 'Searching…' : <><Search size={15}/> Search</>}</button></form>
+            {friendSearchResults.length>0 && <div className="friend-search-results"><h3 className="section-label">SEARCH RESULTS</h3>{friendSearchResults.map(person=><div className="friend-row" key={person.id}><div className="avatar small">{(person.display_name||'?')[0].toUpperCase()}</div><div className="friend-info"><b>{person.display_name}</b><small>{person.mood||'Internet 2008 user'}</small></div><button className="accept-button" onClick={()=>addFriendByProfile(person)}><UserPlus size={15}/><span>Add</span></button></div>)}</div>}
             {friendRequests.length>0 && <><h3 className="section-label">FRIEND REQUESTS</h3>{friendRequests.map(req=><div className="friend-row" key={req.id}><div className="avatar small">{(req.person?.display_name||'?')[0]}</div><div className="friend-info"><b>{req.person?.display_name||'Internet Friend'}</b><small>Wants to be your friend</small></div><button className="accept-button" onClick={()=>respondFriend(req,true)}><UserCheck size={15}/></button><button className="decline-button" onClick={()=>respondFriend(req,false)}><X size={15}/></button></div>)}</>}
             <h3 className="section-label">YOUR FRIENDS · {friends.length}</h3>
             {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" disabled={dmBusy} onClick={()=>openFriend(friend)}><MessageCircle size={15}/> {dmBusy ? 'Opening…' : 'Message'}</button></div>)}
-            {friends.length===0 && friendRequests.length===0 && <div className="empty-state"><Users size={30}/><h3>Your buddy list is waiting.</h3><p>Sign in and add friends by their profile ID.</p></div>}
+            {friends.length===0 && friendRequests.length===0 && <div className="empty-state"><Users size={30}/><h3>Your buddy list is waiting.</h3><p>Sign in and search for friends by display name.</p></div>}
             </>}
           </div>}
 
