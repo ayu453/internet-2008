@@ -14,4 +14,4 @@ Read [SETUP.md](./SETUP.md) before connecting a backend or launching publicly.
 
 ## Security note
 
-Never expose Supabase service-role keys in client code. Review all SQL policies, complete the remaining private-friend-DM and match-state UX, and add moderation before public launch.
+Never expose Supabase service-role keys in client code. Private friend messaging is implemented on the feature branch but requires the migration and two-account verification in [SETUP.md](./SETUP.md). Review all SQL policies, complete match-state UX, and add moderation before public launch.
