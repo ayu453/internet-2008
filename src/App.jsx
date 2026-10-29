@@ -943,6 +943,17 @@ function App() {
 
       <footer className="taskbar"><button className="start-button" onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><span className="start-orb"><Monitor size={16}/></span><b>Start</b></button><div className="taskbar-divider"/><button className={`taskbar-app ${activeApp==='messenger'?'active':''}`} onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><MessageCircle size={15}/> Messenger</button><button className={`taskbar-app ${activeApp==='random'?'active':''}`} onClick={()=>{setActiveApp('random');setWindowMinimized(false);}}><Search size={15}/> Random Chat</button><div className="taskbar-spacer"/><div className="system-tray"><span className="tray-status"><span className="tiny-online"/>{session?'Online':'Guest'}</span><span>{nowTime()}</span></div></footer>
 
+      {reportTarget && <div className="modal-backdrop" onClick={() => {if (!reportBusy) setReportTarget(null);}}>
+        <section className="settings-modal report-modal" onClick={e => e.stopPropagation()}>
+          <div className="modal-title"><div><ShieldAlert size={18}/> {reportTarget.title}</div><button className="icon-button" disabled={reportBusy} onClick={() => setReportTarget(null)} aria-label="Close report form"><X size={17}/></button></div>
+          <form className="auth-form" onSubmit={submitReport}>
+            <p>Tell us what happened. Recent chat context is attached to help review the report.</p>
+            <label>Reason<textarea required minLength={3} maxLength={500} value={reportReason} onChange={e => setReportReason(e.target.value)} placeholder="Spam, harassment, unsafe content…" rows={4}/></label>
+            <div className="report-modal-actions"><button className="secondary-button" type="button" disabled={reportBusy} onClick={() => setReportTarget(null)}>Cancel</button><button className="primary-button" type="submit" disabled={reportBusy || reportReason.trim().length < 3}><ShieldAlert size={15}/>{reportBusy ? 'Submitting…' : 'Submit report'}</button></div>
+          </form>
+        </section>
+      </div>}
+
       {showSettings && <div className="modal-backdrop" onClick={()=>setShowSettings(false)}><section className="settings-modal" onClick={e=>e.stopPropagation()}><div className="modal-title"><div><Settings size={18}/> Account & settings</div><button className="icon-button" onClick={()=>setShowSettings(false)}><X size={17}/></button></div>
         {session ? <div className="signed-in-card"><div className="avatar">{(nickname||'I')[0]}</div><div><b>{nickname}</b><p>Anonymous chat account</p><small>Session connected</small></div><button className="secondary-button" onClick={signOut}><LogOut size={15}/> Sign out</button></div> : <form className="auth-form" onSubmit={signIn}><h3>Welcome to Internet 2008</h3><p>Enter your name to start chatting. No email or password needed.</p><label>Your name<input maxLength={24} required value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="e.g. dialup_dreamer"/></label><button className="primary-button full" disabled={authBusy}>{authBusy?'Connecting…':'Start chatting'}</button>{authError&&<p className="auth-error">{authError}</p>}</form>}
         <div className="settings-foot"><span className={`connection-dot ${connectionLabel==='Connected'?'live':''}`}/><span>{connectionLabel}</span><span className="settings-foot-spacer"/>{isSupabaseConfigured?'Backend configured':'Backend not configured'}</div>
