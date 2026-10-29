@@ -370,10 +370,11 @@ function App() {
       return;
     }
     const requestId = ++randomRequestRef.current;
-    setRandomState('searching'); setRandomPartner(null); setMatchId(null); setRandomMessages([]);
-    // Finish leaving the previous match before asking the server for another one.
+    // Finish leaving the previous match before exposing the searching state; otherwise
+    // the polling effect could reconnect to the old match while leave is still in flight.
     await randomLeaveRef.current;
     if (requestId !== randomRequestRef.current) return;
+    setRandomState('searching'); setRandomPartner(null); setMatchId(null); setRandomMessages([]);
     const { data, error } = await supabase.rpc('find_random_match');
     // Ignore a late response if the user cancelled or started another search.
     if (requestId !== randomRequestRef.current) return;
