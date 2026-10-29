@@ -434,16 +434,20 @@ function App() {
     const body = input.trim();
     if (!body || !matchId || !session || !supabase) return;
     if (body.length > 1000) return showNotice('Message is too long (max 1000 characters).');
+    const sendingMatchId = matchId;
+    const sendingUserId = session.user.id;
     const { data, error } = await supabase.from('random_match_messages')
-      .insert({ match_id: matchId, sender_id: session.user.id, body })
+      .insert({ match_id: sendingMatchId, sender_id: sendingUserId, body })
       .select('id,created_at').single();
     if (error) return showNotice(`Message not sent: ${error.message}`);
+    // The user may have left or matched with someone else while the insert was in flight.
+    if (sendingMatchId !== matchId || sendingUserId !== session?.user?.id) return;
     setRandomMessages(prev => {
       if (prev.some(message => message.id === data.id)) return prev;
       return [...prev, {
         id: data.id, mine: true, name: nickname || 'You', body,
         time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }];
+      }].slice(-200);
     });
     setInput('');
   };
