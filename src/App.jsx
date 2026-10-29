@@ -651,7 +651,7 @@ function App() {
     setReportTarget({
       userId: message.senderId,
       title: 'Report public message',
-      context: `Room: ${message.room || activeRoom}\\nMessage: ${String(message.body || '').slice(0, 1500)}`,
+      context: `Room: ${message.room || activeRoom}\nMessage: ${String(message.body || '').slice(0, 1500)}`,
       leaveAfterSubmit: false
     });
   };
@@ -663,7 +663,7 @@ function App() {
     }
     const context = randomMessages.slice(-5)
       .map(message => `${message.name || 'User'}: ${message.body || ''}`)
-      .join('\\n')
+      .join('\n')
       .slice(0, 2000);
     setReportReason('');
     setReportTarget({
