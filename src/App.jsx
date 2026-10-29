@@ -372,6 +372,50 @@ function App() {
     }
   };
 
+  // A queued user must discover when another user creates their match.
+  // The matchmaking RPC removes both users from the queue, so queue polling alone
+  // cannot notify the first user; read the participant-visible active match row.
+  useEffect(() => {
+    if (!session || !supabase || randomState !== 'searching') return;
+    let alive = true;
+    let checking = false;
+    const checkForMatch = async () => {
+      if (!alive || checking) return;
+      checking = true;
+      try {
+        const { data, error } = await supabase.from('random_matches')
+          .select('id,user_a,user_b')
+          .eq('status', 'active')
+          .or(`user_a.eq.${session.user.id},user_b.eq.${session.user.id}`)
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        if (!alive || !data) return;
+        const partnerId = data.user_a === session.user.id ? data.user_b : data.user_a;
+        const { data: partner } = await supabase.from('profiles')
+          .select('id,display_name').eq('id', partnerId).maybeSingle();
+        if (!alive) return;
+        setMatchId(data.id);
+        setRandomPartner({ id: partnerId, name: partner?.display_name || 'Internet Friend' });
+        setRandomState('matched');
+        showNotice('You found someone to chat with!');
+      } catch (error) {
+        if (alive) {
+          setRandomState('idle');
+          showNotice(`Could not check matching status: ${error.message}`);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+    checkForMatch();
+    const timer = window.setInterval(checkForMatch, 1800);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [session, randomState, showNotice]);
+
   const cancelRandomChat = async () => {
     if (session && supabase) {
       const { error } = await supabase.rpc('leave_random_match');
