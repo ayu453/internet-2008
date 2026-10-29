@@ -135,7 +135,8 @@ create policy "users send room messages as self" on public.messages for insert t
 alter table public.friend_requests enable row level security;
 create policy "sender or receiver can read requests" on public.friend_requests for select to authenticated using (auth.uid() in (sender_id, receiver_id));
 create policy "users send requests as self" on public.friend_requests for insert to authenticated with check (auth.uid() = sender_id);
-create policy "receiver can respond" on public.friend_requests for update to authenticated using (auth.uid() = receiver_id and status = 'pending') with check (auth.uid() = receiver_id and status in ('accepted','rejected'));
+-- Friend requests are accepted/rejected only through respond_friend_request(),
+-- which locks and validates the row before updating it transactionally.
 
 alter table public.friendships enable row level security;
 create policy "friends can read own friendship" on public.friendships for select to authenticated using (auth.uid() in (user_a,user_b));
