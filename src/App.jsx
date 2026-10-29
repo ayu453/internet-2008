@@ -348,6 +348,41 @@ function App() {
     setRandomState('idle'); setRandomPartner(null); setRandomMessages([]); setMatchId(null);
   };
 
+  const reportRandomPartner = async () => {
+    if (!session || !supabase || !randomPartner?.id) {
+      return showNotice('Sign in and connect to a stranger before reporting.');
+    }
+    const reason = window.prompt('Why are you reporting this person? (3–500 characters)');
+    if (reason === null) return;
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 3 || trimmedReason.length > 500) {
+      return showNotice('Please enter a reason between 3 and 500 characters.');
+    }
+    const { error } = await supabase.from('reports').insert({
+      reporter_id: session.user.id,
+      reported_user_id: randomPartner.id,
+      reason: trimmedReason,
+      context: matchId ? `Random chat match: ${matchId}` : 'Random stranger chat'
+    });
+    if (error) return showNotice(`Report could not be sent: ${error.message}`);
+    showNotice('Report submitted. Thanks for helping keep the community safe.');
+  };
+
+  const blockRandomPartner = async () => {
+    if (!session || !supabase || !randomPartner?.id) {
+      return showNotice('Sign in and connect to a stranger before blocking.');
+    }
+    const confirmed = window.confirm(`Block ${randomPartner.name || 'this person'}? You will leave this chat and should not be matched with them again.`);
+    if (!confirmed) return;
+    const { error } = await supabase.from('blocks').upsert({
+      blocker_id: session.user.id,
+      blocked_id: randomPartner.id
+    }, { onConflict: 'blocker_id,blocked_id', ignoreDuplicates: true });
+    if (error) return showNotice(`Could not block this person: ${error.message}`);
+    await cancelRandomChat();
+    showNotice('Person blocked. You have left the chat.');
+  };
+
   const sendRandomMessage = async (event) => {
     event.preventDefault();
     const body = input.trim();
@@ -578,7 +613,7 @@ function App() {
               {randomState === 'idle' && <><h3>Somewhere, someone is online.</h3><p>Say hello to a random person. You can leave or report at any time.</p><button className="primary-button" onClick={startRandomChat}><Search size={16}/> Find someone</button></>}
               {randomState === 'searching' && <><h3>Looking for someone…</h3><p>Waiting for another available, signed-in person.</p><div className="loading-dots"><i/><i/><i/></div><button className="secondary-button" onClick={cancelRandomChat}>Cancel search</button></>}
               {randomState === 'login' && <><h3>Sign in to meet people</h3><p>Random matching requires an account and live backend so we can apply safety rules.</p><button className="primary-button" onClick={() => {setAuthPanel('welcome');setShowSettings(true);}}>Account settings</button><button className="secondary-button" onClick={() => setRandomState('idle')}>Back</button></>}
-              {randomState === 'matched' && <><h3>You’re connected!</h3><p>Talking to {randomPartner?.name || 'an Internet Friend'}</p><div className="random-transcript">{randomMessages.map(m=><div key={m.id} className={m.mine?'mine':''}><b>{m.name}:</b> {m.body}</div>)}</div><form className="random-compose" onSubmit={sendRandomMessage}><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Say hello…"/><button className="primary-button"><Send size={15}/></button></form><div className="random-actions"><button className="secondary-button" onClick={cancelRandomChat}><LogOut size={14}/> Leave</button><button className="secondary-button" onClick={() => showNotice('Report flow: connect your moderation review process before public launch.')}><ShieldAlert size={14}/> Report</button></div></>}
+              {randomState === 'matched' && <><h3>You’re connected!</h3><p>Talking to {randomPartner?.name || 'an Internet Friend'}</p><div className="random-transcript">{randomMessages.map(m=><div key={m.id} className={m.mine?'mine':''}><b>{m.name}:</b> {m.body}</div>)}</div><form className="random-compose" onSubmit={sendRandomMessage}><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Say hello…"/><button className="primary-button"><Send size={15}/></button></form><div className="random-actions"><button className="secondary-button" onClick={cancelRandomChat}><LogOut size={14}/> Leave</button><button className="secondary-button" onClick={reportRandomPartner}><ShieldAlert size={14}/> Report</button><button className="secondary-button" onClick={blockRandomPartner}><LockKeyhole size={14}/> Block</button></div></>}
             </div><div className="safety-note"><LockKeyhole size={16}/><span><b>Your safety matters.</b> Don’t share passwords, address, phone number or payment details. Block/report features should be enabled before public launch.</span></div>
           </div>}
 
