@@ -204,17 +204,24 @@ function App() {
     (async () => {
       const { data, error } = await supabase.from('messages').select('id,room_id,sender_id,body,created_at')
         .eq('room_id', room).order('created_at', { ascending: true }).limit(100);
-      if (alive && !error) {
-        const ids = [...new Set((data || []).map(m => m.sender_id))];
-        const { data: people } = ids.length ? await supabase.from('profiles').select('id,display_name').in('id', ids) : { data: [] };
-        const mapped = (data || []).map(m => ({
-          id: m.id, room: m.room_id, senderId: m.sender_id,
-          name: people?.find(p => p.id === m.sender_id)?.display_name || 'Internet Friend',
-          body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          mine: m.sender_id === session.user.id
-        }));
-        setMessages(prev => ({ ...prev, [room]: mapped }));
+      if (!alive) return;
+      if (error) {
+        showNotice(`Could not load ${room} messages: ${error.message}`);
+        return;
       }
+      const ids = [...new Set((data || []).map(m => m.sender_id))];
+      const { data: people, error: peopleError } = ids.length
+        ? await supabase.from('profiles').select('id,display_name').in('id', ids)
+        : { data: [], error: null };
+      if (!alive) return;
+      if (peopleError) showNotice(`Some sender names could not load: ${peopleError.message}`);
+      const mapped = (data || []).map(m => ({
+        id: m.id, room: m.room_id, senderId: m.sender_id,
+        name: people?.find(p => p.id === m.sender_id)?.display_name || 'Internet Friend',
+        body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mine: m.sender_id === session.user.id
+      }));
+      setMessages(prev => ({ ...prev, [room]: mapped }));
     })();
     const channel = supabase.channel(`room:${room}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${room}` }, async (payload) => {
@@ -223,7 +230,11 @@ function App() {
         const { data: person } = await supabase.from('profiles').select('display_name').eq('id', m.sender_id).maybeSingle();
         pushMessage(room, { id: m.id, room, senderId: m.sender_id, name: person?.display_name || 'Internet Friend', body: m.body, time: nowTime(), mine: false });
         setUnread(prev => ({ ...prev, [room]: (prev[room] || 0) + (document.hidden ? 1 : 0) }));
-      }).subscribe();
+      }).subscribe((state) => {
+        if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
+          showNotice(`Live updates for ${room} are unavailable. Check the Supabase Realtime setup.`);
+        }
+      });
     realtimeRef.current.push(channel);
     return () => { alive = false; supabase.removeChannel(channel); realtimeRef.current = realtimeRef.current.filter(c => c !== channel); };
   }, [session, activeRoom, pushMessage]);
