@@ -75,6 +75,9 @@ function App() {
   const [authError, setAuthError] = useState('');
   const [unread, setUnread] = useState({});
   const [showSettings, setShowSettings] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportBusy, setReportBusy] = useState(false);
   const [statusText, setStatusText] = useState('Listening to old internet');
   const [connectionLabel, setConnectionLabel] = useState(isSupabaseConfigured ? 'Connecting…' : 'Local demo mode');
   const endRef = useRef(null);
@@ -639,59 +642,67 @@ function App() {
     showNotice(accept ? 'Friend added!' : 'Request declined.');
   };
 
-  const reportRoomMessage = async (message) => {
+  const reportRoomMessage = (message) => {
     if (!session || !supabase || !message?.senderId || message.mine) {
       showNotice('Sign in to report messages.');
       return;
     }
-    const enteredReason = window.prompt('Why are you reporting this message?');
-    if (enteredReason === null) return;
-    const reason = enteredReason.trim().slice(0, 500);
-    if (reason.length < 3) {
-      showNotice('Please enter at least 3 characters so the report is useful.');
-      return;
-    }
-    const { error } = await supabase.from('reports').insert({
-      reporter_id: session.user.id,
-      reported_user_id: message.senderId,
-      reason,
-      context: `Room: ${message.room || activeRoom}\nMessage: ${String(message.body || '').slice(0, 1500)}`
+    setReportReason('');
+    setReportTarget({
+      userId: message.senderId,
+      title: 'Report public message',
+      context: `Room: ${message.room || activeRoom}\\nMessage: ${String(message.body || '').slice(0, 1500)}`,
+      leaveAfterSubmit: false
     });
-    if (error) {
-      showNotice(`Report could not be submitted: ${error.message}`);
-      return;
-    }
-    showNotice('Message reported. Thank you for helping keep the room safe.');
   };
 
-  const reportRandomPartner = async () => {
+  const reportRandomPartner = () => {
     if (!session || !supabase || !randomPartner?.id) {
       showNotice('Sign in and connect to a chat before reporting.');
       return;
     }
-    const enteredReason = window.prompt('Why are you reporting this person? Please include enough detail for a moderator.');
-    if (enteredReason === null) return;
-    const reason = enteredReason.trim().slice(0, 500);
+    const context = randomMessages.slice(-5)
+      .map(message => `${message.name || 'User'}: ${message.body || ''}`)
+      .join('\\n')
+      .slice(0, 2000);
+    setReportReason('');
+    setReportTarget({
+      userId: randomPartner.id,
+      title: `Report ${randomPartner.name || 'chat partner'}`,
+      context,
+      leaveAfterSubmit: true
+    });
+  };
+
+  const submitReport = async (event) => {
+    event?.preventDefault();
+    if (!session || !supabase || !reportTarget?.userId) return;
+    const reason = reportReason.trim().slice(0, 500);
     if (reason.length < 3) {
       showNotice('Please enter at least 3 characters so the report is useful.');
       return;
     }
-    const context = randomMessages.slice(-5)
-      .map(message => `${message.name || 'User'}: ${message.body || ''}`)
-      .join('\n')
-      .slice(0, 2000);
-    const { error } = await supabase.from('reports').insert({
-      reporter_id: session.user.id,
-      reported_user_id: randomPartner.id,
-      reason,
-      context
-    });
-    if (error) {
+    setReportBusy(true);
+    try {
+      const { error } = await supabase.from('reports').insert({
+        reporter_id: session.user.id,
+        reported_user_id: reportTarget.userId,
+        reason,
+        context: reportTarget.context || ''
+      });
+      if (error) throw error;
+      const shouldLeave = reportTarget.leaveAfterSubmit;
+      setReportTarget(null);
+      setReportReason('');
+      if (shouldLeave) await cancelRandomChat();
+      showNotice(shouldLeave
+        ? 'Report submitted. You have left the conversation.'
+        : 'Message reported. Thank you for helping keep the room safe.');
+    } catch (error) {
       showNotice(`Report could not be submitted: ${error.message}`);
-      return;
+    } finally {
+      setReportBusy(false);
     }
-    await cancelRandomChat();
-    showNotice('Report submitted. You have left the conversation.');
   };
 
   const blockRandomPartner = async () => {
