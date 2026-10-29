@@ -655,7 +655,7 @@ function App() {
       reporter_id: session.user.id,
       reported_user_id: message.senderId,
       reason,
-      context: `Room: ${message.room || activeRoom}\\nMessage: ${String(message.body || '').slice(0, 1500)}`
+      context: `Room: ${message.room || activeRoom}\nMessage: ${String(message.body || '').slice(0, 1500)}`
     });
     if (error) {
       showNotice(`Report could not be submitted: ${error.message}`);
