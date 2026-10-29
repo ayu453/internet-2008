@@ -314,6 +314,8 @@ begin
   if me is null then raise exception 'Sign in required'; end if;
   -- Serialize matchmaking and leaving so a user cannot be claimed by overlapping requests.
   perform pg_advisory_xact_lock(20081008::bigint);
+  -- Remove abandoned queue entries; active clients refresh their queue lease periodically.
+  delete from public.random_queue where queued_at < now() - interval '45 seconds';
   if exists (select 1 from random_matches where status='active' and me in (user_a,user_b)) then
     raise exception 'You already have an active match';
   end if;
