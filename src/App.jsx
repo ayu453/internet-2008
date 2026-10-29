@@ -358,6 +358,12 @@ function App() {
 
   const signOut = async () => {
     if (supabase && session) await supabase.auth.signOut();
+    // Clear user-scoped UI/cache immediately so another person using this browser
+    // cannot see the previous account's private conversation after sign-out.
+    setSelectedFriend(null); setActiveConversationId(null); setDmMessages({});
+    setFriendRequests([]); setFriends([]);
+    setRandomState('idle'); setRandomPartner(null); setMatchId(null); setRandomMessages([]);
+    randomRequestRef.current += 1;
     setSession(null); setProfile(null); setGuestMode(false); setNickname('');
     localStorage.removeItem('i2008-nickname');
     setAuthPanel('welcome'); showNotice('Signed out.');
@@ -577,7 +583,10 @@ function App() {
     if (error) return showNotice(error.message);
     if (accept) {
       const a = [session.user.id, request.sender_id].sort();
-      const { error: friendError } = await supabase.from('friendships').insert({ user_a: a[0], user_b: a[1] });
+      const { error: friendError } = await supabase.from('friendships').upsert(
+        { user_a: a[0], user_b: a[1] },
+        { onConflict: 'user_a,user_b', ignoreDuplicates: true }
+      );
       if (friendError) return showNotice(friendError.message);
     }
     setFriendRequests(prev => prev.filter(r => r.id !== request.id));
