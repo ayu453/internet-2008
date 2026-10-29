@@ -29,6 +29,9 @@ function App() {
   const [windowMaximized, setWindowMaximized] = useState(false);
   const [messages, setMessages] = useState({});
   const [dmMessages, setDmMessages] = useState({});
+  const [selectedFriend, setSelectedFriend] = useState(null);
+  const [activeConversationId, setActiveConversationId] = useState(null);
+  const [dmBusy, setDmBusy] = useState(false);
   const [input, setInput] = useState('');
   const [friends, setFriends] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
@@ -228,7 +231,7 @@ function App() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     setUnread(prev => ({ ...prev, [activeRoom]: 0 }));
-  }, [roomMessages.length, activeRoom, activeApp]);
+  }, [roomMessages.length, activeRoom, activeApp, activeConversationId, (dmMessages[activeConversationId] || []).length]);
 
   const ensureIdentity = () => {
     if (!nickname.trim()) {
@@ -423,10 +426,87 @@ function App() {
     showNotice(accept ? 'Friend added!' : 'Request declined.');
   };
 
-  const openFriend = (friend) => {
-    setActiveApp('friends');
-    setNotice(`Private friend chat for ${friend.display_name} is included in the schema; complete DM UI is marked as next integration in README.`);
+  const openFriend = async (friend) => {
+    if (!session || !supabase) return showNotice('Sign in to message your friends.');
+    setDmBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('get_or_create_friend_conversation', { p_friend_id: friend.id });
+      if (error) throw error;
+      setSelectedFriend(friend);
+      setActiveConversationId(data);
+      setActiveApp('friends');
+      setInput('');
+    } catch (error) {
+      showNotice(`Could not open private chat: ${error.message}`);
+    } finally {
+      setDmBusy(false);
+    }
   };
+
+  const sendFriendMessage = async (event) => {
+    event?.preventDefault();
+    const body = input.trim();
+    if (!body || !activeConversationId || !session || !supabase) return;
+    if (body.length > 1000) return showNotice('Message is too long (max 1000 characters).');
+    const { data, error } = await supabase.from('private_messages').insert({
+      conversation_id: activeConversationId, sender_id: session.user.id, body
+    }).select('id,created_at').single();
+    if (error) return showNotice(`Message not sent: ${error.message}`);
+    setDmMessages(prev => ({
+      ...prev,
+      [activeConversationId]: [...(prev[activeConversationId] || []), {
+        id: data.id, sender_id: session.user.id, body,
+        created_at: data.created_at, mine: true, name: nickname || 'You',
+        time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }].slice(-200)
+    }));
+    setInput('');
+  };
+
+  useEffect(() => {
+    if (!session || !supabase || !activeConversationId || activeApp !== 'friends') return;
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.from('private_messages')
+        .select('id,sender_id,body,created_at').eq('conversation_id', activeConversationId)
+        .order('created_at', { ascending: true }).limit(200);
+      if (!alive || error) {
+        if (alive && error) showNotice(`Could not load messages: ${error.message}`);
+        return;
+      }
+      const senderIds = [...new Set((data || []).map(m => m.sender_id))];
+      const { data: people } = senderIds.length
+        ? await supabase.from('profiles').select('id,display_name').in('id', senderIds)
+        : { data: [] };
+      if (!alive) return;
+      const loadedMessages = (data || []).map(m => ({
+        ...m, mine: m.sender_id === session.user.id,
+        name: people?.find(p => p.id === m.sender_id)?.display_name || (m.sender_id === session.user.id ? nickname : selectedFriend?.display_name) || 'Internet Friend',
+        time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }));
+      setDmMessages(prev => {
+        const existing = prev[activeConversationId] || [];
+        const byId = new Map([...loadedMessages, ...existing].map(message => [message.id, message]));
+        return { ...prev, [activeConversationId]: [...byId.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(-200) };
+      });
+    })();
+    const channel = supabase.channel(`private-chat:${activeConversationId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages', filter: `conversation_id=eq.${activeConversationId}` }, async ({ new: m }) => {
+        if (!alive || m.sender_id === session.user.id) return;
+        const { data: person } = await supabase.from('profiles').select('display_name').eq('id', m.sender_id).maybeSingle();
+        if (!alive) return;
+        setDmMessages(prev => {
+          const existing = prev[activeConversationId] || [];
+          if (existing.some(item => item.id === m.id)) return prev;
+          return { ...prev, [activeConversationId]: [...existing, {
+            ...m, mine: false, name: person?.display_name || selectedFriend?.display_name || 'Internet Friend',
+            time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }].slice(-200) };
+        });
+      }).subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [session, activeConversationId, activeApp, selectedFriend, nickname, showNotice]);
+
 
   const currentRoom = ROOMS.find(r => r.id === activeRoom) || ROOMS[0];
   const windowTitle = activeApp === 'messenger' ? 'Internet Messenger' :
@@ -527,6 +607,7 @@ function App() {
           </div>}
 
           {activeApp === 'friends' && <div className="page-panel"><div className="page-title"><Users/><div><h2>Buddy list</h2><p>Your internet friends, wherever they are.</p></div></div>
+            {selectedFriend && activeConversationId ? <section className="friend-dm-panel"><div className="friend-dm-header"><button className="secondary-button" onClick={() => { setSelectedFriend(null); setActiveConversationId(null); setInput(''); }}><ChevronRight size={15}/> Back to buddies</button><div className="friend-dm-person"><div className="avatar small">{(selectedFriend.display_name||'?')[0]}</div><div><b>{selectedFriend.display_name}</b><small>Private conversation</small></div></div></div><div className="friend-dm-transcript">{(dmMessages[activeConversationId] || []).map(m => <article className={`message ${m.mine ? 'mine' : ''}`} key={m.id}><div className="message-avatar">{(m.name||'?').slice(0,1).toUpperCase()}</div><div className="message-content"><div className="message-meta"><b>{m.name}{m.mine ? ' (you)' : ''}</b><time>{m.time}</time></div><div className="message-bubble">{m.body}</div></div></article>)}{!(dmMessages[activeConversationId] || []).length && <div className="empty-state"><MessageCircle size={28}/><h3>Say hello!</h3><p>This is a private conversation between you and {selectedFriend.display_name}.</p></div>}<div ref={endRef}/></div><form className="composer" onSubmit={sendFriendMessage}><div className="composer-tools"><span>Private message to {selectedFriend.display_name}</span><span className="char-count">{input.length}/1000</span></div><div className="composer-bottom"><textarea value={input} maxLength={1000} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendFriendMessage(e);}}} placeholder="Write a private message… (Enter to send)" rows={2}/><button className="send-button" type="submit" disabled={!input.trim()}><Send size={17}/><span>Send</span></button></div></form></section> : <>
             {!session && <div className="inline-warning"><LockKeyhole size={18}/><div><b>Permanent friends need an account.</b><p>Guest mode only saves this session locally.</p></div><button className="secondary-button" onClick={()=>setShowSettings(true)}>Sign in</button></div>}
             <form className="friend-add" onSubmit={e=>{e.preventDefault();sendFriendRequest();}}><input value={friendSearch} onChange={e=>setFriendSearch(e.target.value)} placeholder="Search by display name or profile ID"/><button className="primary-button" disabled={!session || friendSearchBusy}><UserPlus size={15}/> Add friend</button></form>
             {friendSearchLoading && <small className="muted">Searching profiles…</small>}
@@ -534,8 +615,9 @@ function App() {
             {friendSearch.trim().length>=2 && !friendSearchLoading && friendSearchResults.length===0 && <small className="muted">No matching profiles found.</small>}
             {friendRequests.length>0 && <><h3 className="section-label">FRIEND REQUESTS</h3>{friendRequests.map(req=><div className="friend-row" key={req.id}><div className="avatar small">{(req.person?.display_name||'?')[0]}</div><div className="friend-info"><b>{req.person?.display_name||'Internet Friend'}</b><small>Wants to be your friend</small></div><button className="accept-button" onClick={()=>respondFriend(req,true)}><UserCheck size={15}/></button><button className="decline-button" onClick={()=>respondFriend(req,false)}><X size={15}/></button></div>)}</>}
             <h3 className="section-label">YOUR FRIENDS · {friends.length}</h3>
-            {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" onClick={()=>openFriend(friend)}><MessageCircle size={15}/> Message</button></div>)}
+            {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" disabled={dmBusy} onClick={()=>openFriend(friend)}><MessageCircle size={15}/> {dmBusy ? 'Opening…' : 'Message'}</button></div>)}
             {friends.length===0 && friendRequests.length===0 && <div className="empty-state"><Users size={30}/><h3>Your buddy list is waiting.</h3><p>Sign in and add friends by their profile ID.</p></div>}
+            </>}
           </div>}
 
           {activeApp === 'profile' && <div className="page-panel profile-page"><div className="page-title"><UserRound/><div><h2>My profile</h2><p>Your little corner of the internet.</p></div></div><div className="profile-edit-card"><div className="avatar big">{(nickname||'I')[0].toUpperCase()}</div><label>Display name<input maxLength={24} value={nickname} onChange={e=>setNickname(e.target.value)}/></label><label>What are you up to?<input maxLength={80} value={statusText} onChange={e=>setStatusText(e.target.value)}/></label><label>Availability<select value={status} onChange={e=>setStatus(e.target.value)}><option>Available</option><option>Away</option><option>Busy</option><option>Invisible</option></select></label><button className="primary-button" onClick={async()=>{localStorage.setItem('i2008-nickname',nickname);if(session){const {error}=await supabase.from('profiles').update({display_name:nickname,mood:statusText}).eq('id',session.user.id);if(error)return showNotice(error.message);}showNotice('Profile updated.');}}><UserCheck size={16}/> Save profile</button></div></div>}
