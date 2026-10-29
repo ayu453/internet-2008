@@ -26,8 +26,8 @@ begin
     and not exists (select 1 from blocks b where (b.blocker_id=me and b.blocked_id=q.user_id) or (b.blocker_id=q.user_id and b.blocked_id=me))
     and not exists (select 1 from random_matches rm where rm.status='active' and q.user_id in (rm.user_a,rm.user_b))
   order by q.queued_at
-  for update skip locked
-  limit 1;
+  limit 1
+  for update skip locked;
   if partner is null then
     return jsonb_build_object('status','queued');
   end if;
