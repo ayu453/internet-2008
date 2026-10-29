@@ -55,7 +55,7 @@ function App() {
   const [friendRequests, setFriendRequests] = useState([]);
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [blockedLoading, setBlockedLoading] = useState(false);
-  const [onlineCount, setOnlineCount] = useState(1);
+  const [onlineCount, setOnlineCount] = useState(0);
   const [onlineIds, setOnlineIds] = useState([]);
   const [soundOn, setSoundOn] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -151,10 +151,14 @@ function App() {
   useEffect(() => {
     if (!isSupabaseConfigured) {
       setConnectionLabel('Local demo mode');
+      setOnlineIds([]);
+      setOnlineCount(0);
       return;
     }
     if (!session) {
       setConnectionLabel('Enter your name to connect');
+      setOnlineIds([]);
+      setOnlineCount(0);
       return;
     }
     setConnectionLabel('Connecting live…');
