@@ -56,9 +56,10 @@ The app runs in local demo mode until `.env` is filled in.
 4. In Supabase SQL Editor, run all of `supabase/schema.sql`.
 5. For an existing project that already has the schema, run `supabase/migrations/002_friend_private_messages.sql` after the base schema to enable private friend conversations.
 6. Run `supabase/migrations/003_serialize_random_matchmaking.sql` to prevent overlapping match/leave RPCs from assigning a user to multiple active matches.
-7. In Supabase Dashboard → Authentication → Sign In / Providers, enable **Anonymous Sign-Ins**. Email confirmation is not needed for this name-only flow.
-8. Restart `npm run dev` after editing `.env`.
-9. Open the app on two separate browsers/devices, enter a display name in each, and test public room messages, random matching, and private messages between accepted friends.
+7. Run `supabase/migrations/004_atomic_friend_request_response.sql` so accepting a request and creating its friendship succeed or fail together.
+8. In Supabase Dashboard → Authentication → Sign In / Providers, enable **Anonymous Sign-Ins**. Email confirmation is not needed for this name-only flow.
+9. Restart `npm run dev` after editing `.env`.
+10. Open the app on two separate browsers/devices, enter a display name in each, and test public room messages, random matching, and private messages between accepted friends.
 
 Never put a service-role/secret key in `.env` with a `VITE_` prefix or in browser code.
 
