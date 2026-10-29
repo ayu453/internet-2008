@@ -44,6 +44,8 @@ function App() {
   const [randomMessages, setRandomMessages] = useState([]);
   const [matchId, setMatchId] = useState(null);
   const [friendSearch, setFriendSearch] = useState('');
+  const [friendSearchResults, setFriendSearchResults] = useState([]);
+  const [friendSearchLoading, setFriendSearchLoading] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authPanel, setAuthPanel] = useState('welcome');
@@ -142,6 +144,49 @@ function App() {
     })();
     return () => { alive = false; };
   }, [session, notice]);
+
+  useEffect(() => {
+    const target = friendSearch.trim();
+    if (!session || !supabase || target.length < 2) {
+      setFriendSearchResults([]);
+      setFriendSearchLoading(false);
+      return;
+    }
+    setFriendSearchLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(target);
+        let query = supabase.from('profiles').select('id,display_name,mood').neq('id', session.user.id).limit(10);
+        query = isUuid ? query.eq('id', target) : query.ilike('display_name', '%' + target + '%');
+        const { data, error } = await query;
+        if (error) throw error;
+        setFriendSearchResults(data || []);
+      } catch (error) {
+        setFriendSearchResults([]);
+        showNotice('Friend search failed: ' + error.message);
+      } finally {
+        setFriendSearchLoading(false);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [friendSearch, session, showNotice]);
+
+  const sendFriendRequestTo = async (person) => {
+    if (!session || !supabase) return showNotice('Sign in to add permanent friends.');
+    if (!person?.id) return showNotice('That profile could not be selected.');
+    setFriendSearchBusy(true);
+    try {
+      const { error } = await supabase.from('friend_requests').insert({ sender_id: session.user.id, receiver_id: person.id });
+      if (error) throw error;
+      setFriendSearch('');
+      setFriendSearchResults([]);
+      showNotice('Friend request sent to ' + (person.display_name || 'your friend') + '.');
+    } catch (error) {
+      showNotice('Friend request failed: ' + error.message);
+    } finally {
+      setFriendSearchBusy(false);
+    }
+  };
 
   const roomMessages = messages[activeRoom] || [];
   const pushMessage = useCallback((room, message) => {
@@ -482,7 +527,10 @@ function App() {
 
           {activeApp === 'friends' && <div className="page-panel"><div className="page-title"><Users/><div><h2>Buddy list</h2><p>Your internet friends, wherever they are.</p></div></div>
             {!session && <div className="inline-warning"><LockKeyhole size={18}/><div><b>Permanent friends need an account.</b><p>Guest mode only saves this session locally.</p></div><button className="secondary-button" onClick={()=>setShowSettings(true)}>Sign in</button></div>}
-            <form className="friend-add" onSubmit={e=>{e.preventDefault();sendFriendRequest();}}><input value={friendSearch} onChange={e=>setFriendSearch(e.target.value)} placeholder="Enter a friend's profile ID"/><button className="primary-button" disabled={!session}><UserPlus size={15}/> Add friend</button></form>
+            <form className="friend-add" onSubmit={e=>{e.preventDefault();sendFriendRequest();}}><input value={friendSearch} onChange={e=>setFriendSearch(e.target.value)} placeholder="Search by display name or profile ID"/><button className="primary-button" disabled={!session || friendSearchBusy}><UserPlus size={15}/> Add friend</button></form>
+            {friendSearchLoading && <small className="muted">Searching profiles…</small>}
+            {friendSearchResults.length>0 && <div className="friend-search-results">{friendSearchResults.map(person=><div className="friend-row" key={person.id}><div className="avatar small">{(person.display_name||'?')[0]}</div><div className="friend-info"><b>{person.display_name||'Internet Friend'}</b><small>{person.mood||'Profile match'}</small></div><button type="button" className="primary-button" disabled={friendSearchBusy} onClick={()=>sendFriendRequestTo(person)}><UserPlus size={15}/> Add</button></div>)}</div>}
+            {friendSearch.trim().length>=2 && !friendSearchLoading && friendSearchResults.length===0 && <small className="muted">No matching profiles found.</small>}
             {friendRequests.length>0 && <><h3 className="section-label">FRIEND REQUESTS</h3>{friendRequests.map(req=><div className="friend-row" key={req.id}><div className="avatar small">{(req.person?.display_name||'?')[0]}</div><div className="friend-info"><b>{req.person?.display_name||'Internet Friend'}</b><small>Wants to be your friend</small></div><button className="accept-button" onClick={()=>respondFriend(req,true)}><UserCheck size={15}/></button><button className="decline-button" onClick={()=>respondFriend(req,false)}><X size={15}/></button></div>)}</>}
             <h3 className="section-label">YOUR FRIENDS · {friends.length}</h3>
             {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" onClick={()=>openFriend(friend)}><MessageCircle size={15}/> Message</button></div>)}
