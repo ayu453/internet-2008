@@ -73,7 +73,7 @@ The production static output is in `dist/`. Host it on a static host such as Ver
 - [ ] Test anonymous sessions, reconnect behavior, and name persistence
 - [ ] Verify RLS using two different accounts
 - [ ] Verify a third account cannot read private conversations or match messages
-- [ ] Complete friend-to-friend private messaging UI and conversation creation RPC
+- [x] Implement friend-to-friend private messaging UI and conversation creation RPC
 - [x] Add match status polling so queued users notice a match without manual retry (requires updated schema)
 - [x] Add a server-side conversation creation RPC and friend-to-friend private messaging UI/history/realtime
 - [ ] Add visible block/report workflows and moderation dashboard
