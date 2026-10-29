@@ -62,6 +62,7 @@ function App() {
   const endRef = useRef(null);
   const inputRef = useRef(input);
   inputRef.current = input;
+  const randomRequestRef = useRef(0);
   const realtimeRef = useRef([]);
   const identity = session?.user?.id || profile?.id || 'guest';
 
@@ -367,8 +368,11 @@ function App() {
       showNotice('Enter your name first to use random matching.');
       return;
     }
-    setRandomState('searching'); setRandomPartner(null); setMatchId(null);
+    const requestId = ++randomRequestRef.current;
+    setRandomState('searching'); setRandomPartner(null); setMatchId(null); setRandomMessages([]);
     const { data, error } = await supabase.rpc('find_random_match');
+    // Ignore a late response if the user cancelled or started another search.
+    if (requestId !== randomRequestRef.current) return;
     if (error) {
       setRandomState('idle');
       return showNotice(`Matching unavailable: ${error.message}. Deploy the database SQL first.`);
@@ -427,11 +431,13 @@ function App() {
   }, [session, randomState, showNotice]);
 
   const cancelRandomChat = async () => {
+    // Invalidate any in-flight matchmaking RPC before changing the visible state.
+    randomRequestRef.current += 1;
+    setRandomState('idle'); setRandomPartner(null); setRandomMessages([]); setMatchId(null);
     if (session && supabase) {
       const { error } = await supabase.rpc('leave_random_match');
       if (error) showNotice(error.message);
     }
-    setRandomState('idle'); setRandomPartner(null); setRandomMessages([]); setMatchId(null);
   };
 
   const sendRandomMessage = async (event) => {
