@@ -185,7 +185,7 @@ function App() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     setUnread(prev => ({ ...prev, [activeRoom]: 0 }));
-  }, [roomMessages.length, activeRoom, activeApp]);
+  }, [roomMessages.length, activeRoom, activeApp, activeConversationId, (dmMessages[activeConversationId] || []).length]);
 
   const ensureIdentity = () => {
     if (!nickname.trim()) {
@@ -456,14 +456,16 @@ function App() {
         ? await supabase.from('profiles').select('id,display_name').in('id', senderIds)
         : { data: [] };
       if (!alive) return;
-      setDmMessages(prev => ({
-        ...prev,
-        [activeConversationId]: (data || []).map(m => ({
-          ...m, mine: m.sender_id === session.user.id,
-          name: people?.find(p => p.id === m.sender_id)?.display_name || (m.sender_id === session.user.id ? nickname : selectedFriend?.display_name) || 'Internet Friend',
-          time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }))
+      const loadedMessages = (data || []).map(m => ({
+        ...m, mine: m.sender_id === session.user.id,
+        name: people?.find(p => p.id === m.sender_id)?.display_name || (m.sender_id === session.user.id ? nickname : selectedFriend?.display_name) || 'Internet Friend',
+        time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }));
+      setDmMessages(prev => {
+        const existing = prev[activeConversationId] || [];
+        const byId = new Map([...loadedMessages, ...existing].map(message => [message.id, message]));
+        return { ...prev, [activeConversationId]: [...byId.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(-200) };
+      });
     })();
     const channel = supabase.channel(`private-chat:${activeConversationId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages', filter: `conversation_id=eq.${activeConversationId}` }, async ({ new: m }) => {
