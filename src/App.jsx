@@ -60,6 +60,8 @@ function App() {
   const [statusText, setStatusText] = useState('Listening to old internet');
   const [connectionLabel, setConnectionLabel] = useState(isSupabaseConfigured ? 'Connecting…' : 'Local demo mode');
   const endRef = useRef(null);
+  const inputRef = useRef(input);
+  inputRef.current = input;
   const realtimeRef = useRef([]);
   const identity = session?.user?.id || profile?.id || 'guest';
 
@@ -560,21 +562,28 @@ function App() {
   const sendFriendMessage = async (event) => {
     event?.preventDefault();
     const body = input.trim();
-    if (!body || !activeConversationId || !session || !supabase) return;
+    const sendingConversationId = activeConversationId;
+    const sendingUserId = session?.user?.id;
+    if (!body || !sendingConversationId || !sendingUserId || !supabase) return;
     if (body.length > 1000) return showNotice('Message is too long (max 1000 characters).');
     const { data, error } = await supabase.from('private_messages').insert({
-      conversation_id: activeConversationId, sender_id: session.user.id, body
+      conversation_id: sendingConversationId, sender_id: sendingUserId, body
     }).select('id,created_at').single();
     if (error) return showNotice(`Message not sent: ${error.message}`);
-    setDmMessages(prev => ({
-      ...prev,
-      [activeConversationId]: [...(prev[activeConversationId] || []), {
-        id: data.id, sender_id: session.user.id, body,
-        created_at: data.created_at, mine: true, name: nickname || 'You',
-        time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }].slice(-200)
-    }));
-    setInput('');
+    setDmMessages(prev => {
+      const current = prev[sendingConversationId] || [];
+      if (current.some(message => message.id === data.id)) return prev;
+      return {
+        ...prev,
+        [sendingConversationId]: [...current, {
+          id: data.id, sender_id: sendingUserId, body,
+          created_at: data.created_at, mine: true, name: nickname || 'You',
+          time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }].slice(-200)
+      };
+    });
+    // Do not erase a new draft typed while the database insert was in flight.
+    if (activeConversationId === sendingConversationId && inputRef.current.trim() === body) setInput('');
   };
 
   useEffect(() => {
