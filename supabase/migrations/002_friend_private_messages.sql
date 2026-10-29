@@ -38,6 +38,9 @@ begin
     raise exception 'Private messages are only available between accepted friends';
   end if;
 
+  -- Serialize creation for this pair so simultaneous first opens cannot create orphan conversations.
+  perform pg_advisory_xact_lock(hashtextextended(a::text || ':' || b::text, 0));
+
   select p.conversation_id into conversation
     from friend_conversation_pairs p where p.user_a = a and p.user_b = b;
   if conversation is null then
