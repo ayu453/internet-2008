@@ -46,6 +46,7 @@ function App() {
   const [friendSearch, setFriendSearch] = useState('');
   const [friendSearchResults, setFriendSearchResults] = useState([]);
   const [friendSearchLoading, setFriendSearchLoading] = useState(false);
+  const [friendSearchBusy, setFriendSearchBusy] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authPanel, setAuthPanel] = useState('welcome');
