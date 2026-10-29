@@ -66,3 +66,24 @@ begin
 exception when duplicate_object then null;
 when undefined_object then raise notice 'Realtime publication unavailable.';
 end $$;
+
+-- Repair private-message RLS policies on existing projects. Qualify the outer
+-- table column so membership must match this exact conversation, not any conversation.
+drop policy if exists "conversation members read private messages" on public.private_messages;
+drop policy if exists "members send private messages" on public.private_messages;
+create policy "conversation members read private messages" on public.private_messages
+  for select to authenticated using (
+    exists (
+      select 1 from public.conversation_members cm
+      where cm.conversation_id = private_messages.conversation_id
+        and cm.user_id = auth.uid()
+    )
+  );
+create policy "members send private messages" on public.private_messages
+  for insert to authenticated with check (
+    auth.uid() = sender_id and exists (
+      select 1 from public.conversation_members cm
+      where cm.conversation_id = private_messages.conversation_id
+        and cm.user_id = auth.uid()
+    )
+  );
