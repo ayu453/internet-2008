@@ -58,6 +58,16 @@ create table if not exists public.conversations (
   created_at timestamptz not null default now(),
   ended_at timestamptz
 );
+create table if not exists public.friend_conversation_pairs (
+  user_a uuid not null references public.profiles(id) on delete cascade,
+  user_b uuid not null references public.profiles(id) on delete cascade,
+  conversation_id uuid not null unique references public.conversations(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_a, user_b),
+  check (user_a < user_b)
+);
+alter table public.friend_conversation_pairs enable row level security;
+
 create table if not exists public.conversation_members (
   conversation_id uuid not null references public.conversations(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -152,9 +162,8 @@ create policy "members read conversation" on public.conversations for select to 
   exists (select 1 from public.conversation_members cm where cm.conversation_id=id and cm.user_id=auth.uid())
 );
 alter table public.conversation_members enable row level security;
-create policy "members see their conversations" on public.conversation_members for select to authenticated using (user_id=auth.uid() or exists (
-  select 1 from public.conversation_members cm where cm.conversation_id=conversation_id and cm.user_id=auth.uid()
-));
+drop policy if exists "members see their conversations" on public.conversation_members;
+create policy "users see own membership" on public.conversation_members for select to authenticated using (user_id = auth.uid());
 -- Membership insertion is intentionally not granted to clients; trusted server functions should create memberships.
 
 alter table public.private_messages enable row level security;
@@ -244,6 +253,44 @@ $$;
 revoke all on function public.leave_random_match() from public;
 grant execute on function public.leave_random_match() to authenticated;
 
+-- Let a queued client discover when another user has matched with them.
+create or replace function public.get_random_match_status()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  me uuid := auth.uid();
+  active_match random_matches%rowtype;
+  partner uuid;
+  partner_name text;
+begin
+  if me is null then raise exception 'Sign in required'; end if;
+
+  select * into active_match
+  from random_matches rm
+  where rm.status = 'active' and me in (rm.user_a, rm.user_b)
+  limit 1;
+
+  if active_match.id is not null then
+    partner := case when active_match.user_a = me then active_match.user_b else active_match.user_a end;
+    select display_name into partner_name from profiles where id = partner;
+    return jsonb_build_object(
+      'status', 'matched', 'match_id', active_match.id,
+      'partner_id', partner, 'partner_name', partner_name
+    );
+  end if;
+
+  if exists (select 1 from random_queue where user_id = me) then
+    return jsonb_build_object('status', 'queued');
+  end if;
+  return jsonb_build_object('status', 'idle');
+end;
+$;
+revoke all on function public.get_random_match_status() from public;
+grant execute on function public.get_random_match_status() to authenticated;
+
 -- Add tables to Realtime publication (safe to run more than once).
 do $$
 begin
@@ -257,6 +304,58 @@ begin
 exception when duplicate_object then null;
 when undefined_object then raise notice 'Realtime publication unavailable.';
 end $$;
+
+
+-- Create or return the stable private conversation for two accepted friends.
+create or replace function public.get_or_create_friend_conversation(p_friend_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  me uuid := auth.uid();
+  a uuid;
+  b uuid;
+  conversation uuid;
+begin
+  if me is null then raise exception 'Sign in required'; end if;
+  if p_friend_id is null or p_friend_id = me then raise exception 'Choose another user'; end if;
+
+  a := least(me, p_friend_id);
+  b := greatest(me, p_friend_id);
+  if not exists (select 1 from friendships f where f.user_a = a and f.user_b = b) then
+    raise exception 'Private messages are only available between accepted friends';
+  end if;
+
+  select p.conversation_id into conversation
+  from friend_conversation_pairs p where p.user_a = a and p.user_b = b;
+
+  if conversation is null then
+    insert into conversations(kind) values ('friend') returning id into conversation;
+    insert into friend_conversation_pairs(user_a, user_b, conversation_id)
+      values (a, b, conversation)
+      on conflict (user_a, user_b) do nothing;
+    select p.conversation_id into conversation
+      from friend_conversation_pairs p where p.user_a = a and p.user_b = b;
+  end if;
+
+  insert into conversation_members(conversation_id, user_id)
+    values (conversation, a), (conversation, b)
+    on conflict (conversation_id, user_id) do nothing;
+
+  return conversation;
+end;
+$;
+revoke all on function public.get_or_create_friend_conversation(uuid) from public;
+grant execute on function public.get_or_create_friend_conversation(uuid) to authenticated;
+
+do $
+begin
+  alter publication supabase_realtime add table public.private_messages;
+exception when duplicate_object then null;
+when undefined_object then raise notice 'Realtime publication unavailable.';
+end $;
 
 -- Important production hardening:
 -- * Configure email confirmation and CAPTCHA/rate limits in Supabase Auth.

@@ -11,13 +11,13 @@ This package contains the React/Vite web app, retro desktop UI, Supabase client 
 - Public room message history + realtime INSERT updates for authenticated users after database setup.
 - Presence channel for signed-in users.
 - Friend request UI and database operations.
-- Server-side random matching RPC scaffold and match chat message subscription.
+- Server-side random matching RPC, match chat message subscription, and report/block controls for random strangers.
 
 ## Important limitations before public launch
 
 This is a complete starter project, not a deployed service. A working internet-wide service requires a Supabase project, environment variables, SQL migration, auth configuration, hosting, testing with multiple real accounts, and security/moderation review.
 
-The current UI's friend Message button is a placeholder; persistent friend-to-friend DM needs the conversation creation RPC and complete private chat screen. Random match queue returns "queued" when nobody is waiting; a production app should subscribe to queue/match state or poll a secure status RPC so the waiting client automatically notices a match. Do not publicly launch until these flows are completed and tested.
+Friend-to-friend private messaging now uses `get_or_create_friend_conversation()` to verify accepted friendships and create/reuse a stable conversation, with private message history and Supabase Realtime updates. Random matching polls `get_random_match_status()` while waiting and loads prior messages after a match is found. For an existing database, run `supabase/migrations/002_friend_private_messages.sql` in the Supabase SQL Editor, then run the updated `supabase/schema.sql` only on a fresh installation. Test with two separate authenticated sessions; do not publicly launch until these flows and moderation are reviewed.
 
 ## Requirements
 
@@ -73,9 +73,11 @@ The production static output is in `dist/`. Host it on a static host such as Ver
 - [ ] Test anonymous sessions, reconnect behavior, and name persistence
 - [ ] Verify RLS using two different accounts
 - [ ] Verify a third account cannot read private conversations or match messages
-- [ ] Complete friend-to-friend private messaging UI and conversation creation RPC
-- [ ] Complete match status subscription so queued users are matched without manual retry
-- [ ] Add visible block/report workflows and moderation dashboard
+- [x] Implement friend-to-friend private messaging UI and conversation creation RPC
+- [x] Add match status polling so queued users notice a match without manual retry (requires updated schema)
+- [x] Add a server-side conversation creation RPC and friend-to-friend private messaging UI/history/realtime
+- [x] Add visible report/block controls for random stranger chat
+- [ ] Build a moderation review dashboard for submitted reports
 - [ ] Add message rate limiting and spam/abuse controls
 - [ ] Add privacy policy, retention/deletion rules and account deletion
 - [ ] Test reconnect, mobile layout, accessibility and keyboard behavior
@@ -87,7 +89,8 @@ The production static output is in `dist/`. Host it on a static host such as Ver
 - Auth/database: Supabase Auth + PostgreSQL
 - Live public room messages: Supabase Realtime Postgres Changes
 - Presence: Supabase Realtime Presence
-- Random match: `find_random_match()` / `leave_random_match()` RPC
+- Friend DMs: `get_or_create_friend_conversation()` RPC + `private_messages` Realtime
+- Random match: `find_random_match()` / `get_random_match_status()` / `leave_random_match()` RPC
 - RLS: row-level access policies defined in `supabase/schema.sql`
 
 ## Troubleshooting
@@ -95,5 +98,6 @@ The production static output is in `dist/`. Host it on a static host such as Ver
 - `Supabase is not configured`: `.env` missing or values unchanged; restart Vite.
 - Name-only sign-in fails: enable Anonymous Sign-Ins in Supabase Authentication settings. Anonymous sessions are browser/device-specific; a name alone is not a secure account recovery method.
 - Messages don't arrive live: ensure `messages` and `random_match_messages` are included in `supabase_realtime`, and inspect RLS / Realtime settings.
-- Random match RPC missing: execute `supabase/schema.sql` in the SQL editor.
+- Random match RPC missing: execute the schema or relevant migration in the SQL editor.
+- Friend DM RPC missing: run `supabase/migrations/002_friend_private_messages.sql` in the SQL editor.
 - Friend request fails: use the exact profile UUID, and test with a second account.

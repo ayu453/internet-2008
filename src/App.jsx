@@ -29,6 +29,9 @@ function App() {
   const [windowMaximized, setWindowMaximized] = useState(false);
   const [messages, setMessages] = useState({});
   const [dmMessages, setDmMessages] = useState({});
+  const [selectedFriend, setSelectedFriend] = useState(null);
+  const [activeConversationId, setActiveConversationId] = useState(null);
+  const [dmBusy, setDmBusy] = useState(false);
   const [input, setInput] = useState('');
   const [friends, setFriends] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
@@ -44,6 +47,8 @@ function App() {
   const [randomMessages, setRandomMessages] = useState([]);
   const [matchId, setMatchId] = useState(null);
   const [friendSearch, setFriendSearch] = useState('');
+  const [friendSearchResults, setFriendSearchResults] = useState([]);
+  const [friendSearchBusy, setFriendSearchBusy] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authPanel, setAuthPanel] = useState('welcome');
@@ -182,7 +187,7 @@ function App() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     setUnread(prev => ({ ...prev, [activeRoom]: 0 }));
-  }, [roomMessages.length, activeRoom, activeApp]);
+  }, [roomMessages.length, activeRoom, activeApp, activeConversationId, (dmMessages[activeConversationId] || []).length]);
 
   const ensureIdentity = () => {
     if (!nickname.trim()) {
@@ -301,12 +306,83 @@ function App() {
     }
   };
 
+  // A queued user must learn when another user joins and the server creates a match.
+  useEffect(() => {
+    if (randomState !== 'searching' || !session || !supabase) return;
+    let alive = true;
+    let checking = false;
+    const checkMatch = async () => {
+      if (checking || !alive) return;
+      checking = true;
+      try {
+        const { data, error } = await supabase.rpc('get_random_match_status');
+        if (error) throw error;
+        if (!alive) return;
+        if (data?.status === 'idle') {
+          setRandomState('idle');
+          showNotice('Your search queue ended. Please try again.');
+          return;
+        }
+        if (data?.status !== 'matched') return;
+        setMatchId(data.match_id);
+        setRandomPartner({ id: data.partner_id, name: data.partner_name || 'Internet Friend' });
+        setRandomState('matched');
+        showNotice('Someone is here — you are connected!');
+      } catch (error) {
+        if (alive) {
+          setRandomState('idle');
+          showNotice(`Could not check match status: ${error.message}`);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+    checkMatch();
+    const timer = window.setInterval(checkMatch, 2500);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [randomState, session, showNotice]);
+
   const cancelRandomChat = async () => {
     if (session && supabase) {
       const { error } = await supabase.rpc('leave_random_match');
       if (error) showNotice(error.message);
     }
     setRandomState('idle'); setRandomPartner(null); setRandomMessages([]); setMatchId(null);
+  };
+
+  const reportRandomPartner = async () => {
+    if (!session || !supabase || !randomPartner?.id) {
+      return showNotice('Sign in and connect to a stranger before reporting.');
+    }
+    const reason = window.prompt('Why are you reporting this person? (3–500 characters)');
+    if (reason === null) return;
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 3 || trimmedReason.length > 500) {
+      return showNotice('Please enter a reason between 3 and 500 characters.');
+    }
+    const { error } = await supabase.from('reports').insert({
+      reporter_id: session.user.id,
+      reported_user_id: randomPartner.id,
+      reason: trimmedReason,
+      context: matchId ? `Random chat match: ${matchId}` : 'Random stranger chat'
+    });
+    if (error) return showNotice(`Report could not be sent: ${error.message}`);
+    showNotice('Report submitted. Thanks for helping keep the community safe.');
+  };
+
+  const blockRandomPartner = async () => {
+    if (!session || !supabase || !randomPartner?.id) {
+      return showNotice('Sign in and connect to a stranger before blocking.');
+    }
+    const confirmed = window.confirm(`Block ${randomPartner.name || 'this person'}? You will leave this chat and should not be matched with them again.`);
+    if (!confirmed) return;
+    const { error } = await supabase.from('blocks').upsert({
+      blocker_id: session.user.id,
+      blocked_id: randomPartner.id
+    }, { onConflict: 'blocker_id,blocked_id', ignoreDuplicates: true });
+    if (error) return showNotice(`Could not block this person: ${error.message}`);
+    await cancelRandomChat();
+    showNotice('Person blocked. You have left the chat.');
   };
 
   const sendRandomMessage = async (event) => {
@@ -321,23 +397,60 @@ function App() {
 
   useEffect(() => {
     if (!session || !matchId || !supabase) return;
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.from('random_match_messages')
+        .select('id,sender_id,body,created_at').eq('match_id', matchId)
+        .order('created_at', { ascending: true }).limit(100);
+      if (!alive || error) return;
+      setRandomMessages((data || []).map(m => ({
+        id: m.id, mine: m.sender_id === session.user.id,
+        name: m.sender_id === session.user.id ? (nickname || 'You') : (randomPartner?.name || 'Stranger'),
+        body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })));
+    })();
     const channel = supabase.channel(`random-match:${matchId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'random_match_messages', filter: `match_id=eq.${matchId}` }, async ({ new: m }) => {
-        if (m.sender_id === session.user.id) return;
+        if (!alive || m.sender_id === session.user.id) return;
         setRandomMessages(prev => [...prev, { id: m.id, mine: false, name: randomPartner?.name || 'Stranger', body: m.body, time: nowTime() }]);
       }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session, matchId, randomPartner]);
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [session, matchId, randomPartner, nickname]);
 
   const sendFriendRequest = async () => {
     const target = friendSearch.trim();
-    if (!session) return showNotice('Sign in to add permanent friends.');
-    if (!target) return showNotice('Enter the exact profile ID of the person you want to add.');
-    if (target === session.user.id) return showNotice('You cannot add yourself.');
-    const { error } = await supabase.from('friend_requests').insert({ sender_id: session.user.id, receiver_id: target });
+    if (!session || !supabase) return showNotice('Sign in to add permanent friends.');
+    if (!target) return showNotice('Enter a display name to search.');
+    setFriendSearchBusy(true);
+    try {
+      // Accept either a display name or a profile UUID, so users do not need to know UUIDs.
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(target);
+      let query = supabase.from('profiles').select('id,display_name,mood').neq('id', session.user.id).limit(10);
+      query = isUuid ? query.eq('id', target) : query.ilike('display_name', `%${target}%`);
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data?.length) {
+        setFriendSearchResults([]);
+        showNotice('No matching profiles found. Check the display name and try again.');
+        return;
+      }
+      setFriendSearchResults(data);
+      if (data.length === 1) showNotice(`Found ${data[0].display_name}. Tap Add beside the profile to send a request.`);
+      else showNotice(`Found ${data.length} profiles. Choose the correct person below.`);
+    } catch (error) {
+      showNotice(`Could not search profiles: ${error.message}`);
+    } finally {
+      setFriendSearchBusy(false);
+    }
+  };
+
+  const addFriendByProfile = async (person) => {
+    if (!session || !supabase || !person?.id) return showNotice('Sign in to add permanent friends.');
+    const { error } = await supabase.from('friend_requests').insert({ sender_id: session.user.id, receiver_id: person.id });
     if (error) return showNotice(error.message);
+    setFriendSearchResults(prev => prev.filter(item => item.id !== person.id));
     setFriendSearch('');
-    showNotice('Friend request sent.');
+    showNotice(`Friend request sent to ${person.display_name}.`);
   };
 
   const respondFriend = async (request, accept) => {
@@ -352,10 +465,86 @@ function App() {
     showNotice(accept ? 'Friend added!' : 'Request declined.');
   };
 
-  const openFriend = (friend) => {
-    setActiveApp('friends');
-    setNotice(`Private friend chat for ${friend.display_name} is included in the schema; complete DM UI is marked as next integration in README.`);
+  const openFriend = async (friend) => {
+    if (!session || !supabase) return showNotice('Sign in to message your friends.');
+    setDmBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('get_or_create_friend_conversation', { p_friend_id: friend.id });
+      if (error) throw error;
+      setSelectedFriend(friend);
+      setActiveConversationId(data);
+      setActiveApp('friends');
+      setInput('');
+    } catch (error) {
+      showNotice(`Could not open private chat: ${error.message}`);
+    } finally {
+      setDmBusy(false);
+    }
   };
+
+  const sendFriendMessage = async (event) => {
+    event?.preventDefault();
+    const body = input.trim();
+    if (!body || !activeConversationId || !session || !supabase) return;
+    if (body.length > 1000) return showNotice('Message is too long (max 1000 characters).');
+    const { data, error } = await supabase.from('private_messages').insert({
+      conversation_id: activeConversationId, sender_id: session.user.id, body
+    }).select('id,created_at').single();
+    if (error) return showNotice(`Message not sent: ${error.message}`);
+    setDmMessages(prev => ({
+      ...prev,
+      [activeConversationId]: [...(prev[activeConversationId] || []), {
+        id: data.id, sender_id: session.user.id, body,
+        created_at: data.created_at, mine: true, name: nickname || 'You',
+        time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }].slice(-200)
+    }));
+    setInput('');
+  };
+
+  useEffect(() => {
+    if (!session || !supabase || !activeConversationId || activeApp !== 'friends') return;
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.from('private_messages')
+        .select('id,sender_id,body,created_at').eq('conversation_id', activeConversationId)
+        .order('created_at', { ascending: true }).limit(200);
+      if (!alive || error) {
+        if (alive && error) showNotice(`Could not load messages: ${error.message}`);
+        return;
+      }
+      const senderIds = [...new Set((data || []).map(m => m.sender_id))];
+      const { data: people } = senderIds.length
+        ? await supabase.from('profiles').select('id,display_name').in('id', senderIds)
+        : { data: [] };
+      if (!alive) return;
+      const loadedMessages = (data || []).map(m => ({
+        ...m, mine: m.sender_id === session.user.id,
+        name: people?.find(p => p.id === m.sender_id)?.display_name || (m.sender_id === session.user.id ? nickname : selectedFriend?.display_name) || 'Internet Friend',
+        time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }));
+      setDmMessages(prev => {
+        const existing = prev[activeConversationId] || [];
+        const byId = new Map([...loadedMessages, ...existing].map(message => [message.id, message]));
+        return { ...prev, [activeConversationId]: [...byId.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(-200) };
+      });
+    })();
+    const channel = supabase.channel(`private-chat:${activeConversationId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages', filter: `conversation_id=eq.${activeConversationId}` }, async ({ new: m }) => {
+        if (!alive || m.sender_id === session.user.id) return;
+        const { data: person } = await supabase.from('profiles').select('display_name').eq('id', m.sender_id).maybeSingle();
+        if (!alive) return;
+        setDmMessages(prev => {
+          const existing = prev[activeConversationId] || [];
+          if (existing.some(item => item.id === m.id)) return prev;
+          return { ...prev, [activeConversationId]: [...existing, {
+            ...m, mine: false, name: person?.display_name || selectedFriend?.display_name || 'Internet Friend',
+            time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }].slice(-200) };
+        });
+      }).subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [session, activeConversationId, activeApp, selectedFriend, nickname, showNotice]);
 
   const currentRoom = ROOMS.find(r => r.id === activeRoom) || ROOMS[0];
   const windowTitle = activeApp === 'messenger' ? 'Internet Messenger' :
@@ -451,17 +640,21 @@ function App() {
               {randomState === 'idle' && <><h3>Somewhere, someone is online.</h3><p>Say hello to a random person. You can leave or report at any time.</p><button className="primary-button" onClick={startRandomChat}><Search size={16}/> Find someone</button></>}
               {randomState === 'searching' && <><h3>Looking for someone…</h3><p>Waiting for another available, signed-in person.</p><div className="loading-dots"><i/><i/><i/></div><button className="secondary-button" onClick={cancelRandomChat}>Cancel search</button></>}
               {randomState === 'login' && <><h3>Sign in to meet people</h3><p>Random matching requires an account and live backend so we can apply safety rules.</p><button className="primary-button" onClick={() => {setAuthPanel('welcome');setShowSettings(true);}}>Account settings</button><button className="secondary-button" onClick={() => setRandomState('idle')}>Back</button></>}
-              {randomState === 'matched' && <><h3>You’re connected!</h3><p>Talking to {randomPartner?.name || 'an Internet Friend'}</p><div className="random-transcript">{randomMessages.map(m=><div key={m.id} className={m.mine?'mine':''}><b>{m.name}:</b> {m.body}</div>)}</div><form className="random-compose" onSubmit={sendRandomMessage}><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Say hello…"/><button className="primary-button"><Send size={15}/></button></form><div className="random-actions"><button className="secondary-button" onClick={cancelRandomChat}><LogOut size={14}/> Leave</button><button className="secondary-button" onClick={() => showNotice('Report flow: connect your moderation review process before public launch.')}><ShieldAlert size={14}/> Report</button></div></>}
+              {randomState === 'matched' && <><h3>You’re connected!</h3><p>Talking to {randomPartner?.name || 'an Internet Friend'}</p><div className="random-transcript">{randomMessages.map(m=><div key={m.id} className={m.mine?'mine':''}><b>{m.name}:</b> {m.body}</div>)}</div><form className="random-compose" onSubmit={sendRandomMessage}><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Say hello…"/><button className="primary-button"><Send size={15}/></button></form><div className="random-actions"><button className="secondary-button" onClick={cancelRandomChat}><LogOut size={14}/> Leave</button><button className="secondary-button" onClick={reportRandomPartner}><ShieldAlert size={14}/> Report</button><button className="secondary-button" onClick={blockRandomPartner}><LockKeyhole size={14}/> Block</button></div></>}
             </div><div className="safety-note"><LockKeyhole size={16}/><span><b>Your safety matters.</b> Don’t share passwords, address, phone number or payment details. Block/report features should be enabled before public launch.</span></div>
           </div>}
 
           {activeApp === 'friends' && <div className="page-panel"><div className="page-title"><Users/><div><h2>Buddy list</h2><p>Your internet friends, wherever they are.</p></div></div>
+            {selectedFriend && activeConversationId ? <section className="friend-dm-panel"><div className="friend-dm-header"><button className="secondary-button" onClick={() => { setSelectedFriend(null); setActiveConversationId(null); setInput(''); }}><ChevronRight size={15}/> Back to buddies</button><div className="friend-dm-person"><div className="avatar small">{(selectedFriend.display_name||'?')[0]}</div><div><b>{selectedFriend.display_name}</b><small>Private conversation</small></div></div></div><div className="friend-dm-transcript">{(dmMessages[activeConversationId] || []).map(m => <article className={`message ${m.mine ? 'mine' : ''}`} key={m.id}><div className="message-avatar">{(m.name||'?').slice(0,1).toUpperCase()}</div><div className="message-content"><div className="message-meta"><b>{m.name}{m.mine ? ' (you)' : ''}</b><time>{m.time}</time></div><div className="message-bubble">{m.body}</div></div></article>)}{!(dmMessages[activeConversationId] || []).length && <div className="empty-state"><MessageCircle size={28}/><h3>Say hello!</h3><p>This is a private conversation between you and {selectedFriend.display_name}.</p></div>}<div ref={endRef}/></div><form className="composer" onSubmit={sendFriendMessage}><div className="composer-tools"><span>Private message to {selectedFriend.display_name}</span><span className="char-count">{input.length}/1000</span></div><div className="composer-bottom"><textarea value={input} maxLength={1000} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendFriendMessage(e);}}} placeholder="Write a private message… (Enter to send)" rows={2}/><button className="send-button" type="submit" disabled={!input.trim()}><Send size={17}/><span>Send</span></button></div></form></section> : <>
+
             {!session && <div className="inline-warning"><LockKeyhole size={18}/><div><b>Permanent friends need an account.</b><p>Guest mode only saves this session locally.</p></div><button className="secondary-button" onClick={()=>setShowSettings(true)}>Sign in</button></div>}
-            <form className="friend-add" onSubmit={e=>{e.preventDefault();sendFriendRequest();}}><input value={friendSearch} onChange={e=>setFriendSearch(e.target.value)} placeholder="Enter a friend's profile ID"/><button className="primary-button" disabled={!session}><UserPlus size={15}/> Add friend</button></form>
+            <form className="friend-add" onSubmit={e=>{e.preventDefault();sendFriendRequest();}}><input value={friendSearch} onChange={e=>{setFriendSearch(e.target.value);setFriendSearchResults([]);}} placeholder="Search by display name or profile ID"/><button className="primary-button" disabled={!session||friendSearchBusy}>{friendSearchBusy ? 'Searching…' : <><Search size={15}/> Search</>}</button></form>
+            {friendSearchResults.length>0 && <div className="friend-search-results"><h3 className="section-label">SEARCH RESULTS</h3>{friendSearchResults.map(person=><div className="friend-row" key={person.id}><div className="avatar small">{(person.display_name||'?')[0].toUpperCase()}</div><div className="friend-info"><b>{person.display_name}</b><small>{person.mood||'Internet 2008 user'}</small></div><button className="accept-button" onClick={()=>addFriendByProfile(person)}><UserPlus size={15}/><span>Add</span></button></div>)}</div>}
             {friendRequests.length>0 && <><h3 className="section-label">FRIEND REQUESTS</h3>{friendRequests.map(req=><div className="friend-row" key={req.id}><div className="avatar small">{(req.person?.display_name||'?')[0]}</div><div className="friend-info"><b>{req.person?.display_name||'Internet Friend'}</b><small>Wants to be your friend</small></div><button className="accept-button" onClick={()=>respondFriend(req,true)}><UserCheck size={15}/></button><button className="decline-button" onClick={()=>respondFriend(req,false)}><X size={15}/></button></div>)}</>}
             <h3 className="section-label">YOUR FRIENDS · {friends.length}</h3>
-            {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" onClick={()=>openFriend(friend)}><MessageCircle size={15}/> Message</button></div>)}
-            {friends.length===0 && friendRequests.length===0 && <div className="empty-state"><Users size={30}/><h3>Your buddy list is waiting.</h3><p>Sign in and add friends by their profile ID.</p></div>}
+            {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" disabled={dmBusy} onClick={()=>openFriend(friend)}><MessageCircle size={15}/> {dmBusy ? 'Opening…' : 'Message'}</button></div>)}
+            {friends.length===0 && friendRequests.length===0 && <div className="empty-state"><Users size={30}/><h3>Your buddy list is waiting.</h3><p>Sign in and search for friends by display name.</p></div>}
+            </>}
           </div>}
 
           {activeApp === 'profile' && <div className="page-panel profile-page"><div className="page-title"><UserRound/><div><h2>My profile</h2><p>Your little corner of the internet.</p></div></div><div className="profile-edit-card"><div className="avatar big">{(nickname||'I')[0].toUpperCase()}</div><label>Display name<input maxLength={24} value={nickname} onChange={e=>setNickname(e.target.value)}/></label><label>What are you up to?<input maxLength={80} value={statusText} onChange={e=>setStatusText(e.target.value)}/></label><label>Availability<select value={status} onChange={e=>setStatus(e.target.value)}><option>Available</option><option>Away</option><option>Busy</option><option>Invisible</option></select></label><button className="primary-button" onClick={async()=>{localStorage.setItem('i2008-nickname',nickname);if(session){const {error}=await supabase.from('profiles').update({display_name:nickname,mood:statusText}).eq('id',session.user.id);if(error)return showNotice(error.message);}showNotice('Profile updated.');}}><UserCheck size={16}/> Save profile</button></div></div>}
