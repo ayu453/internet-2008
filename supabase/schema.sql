@@ -159,10 +159,18 @@ create policy "users see own membership" on public.conversation_members
 
 alter table public.private_messages enable row level security;
 create policy "conversation members read private messages" on public.private_messages for select to authenticated using (
-  exists (select 1 from public.conversation_members cm where cm.conversation_id=conversation_id and cm.user_id=auth.uid())
+  exists (
+    select 1 from public.conversation_members cm
+    where cm.conversation_id = private_messages.conversation_id
+      and cm.user_id = auth.uid()
+  )
 );
 create policy "members send private messages" on public.private_messages for insert to authenticated with check (
-  auth.uid()=sender_id and exists (select 1 from public.conversation_members cm where cm.conversation_id=conversation_id and cm.user_id=auth.uid())
+  auth.uid() = sender_id and exists (
+    select 1 from public.conversation_members cm
+    where cm.conversation_id = private_messages.conversation_id
+      and cm.user_id = auth.uid()
+  )
 );
 
 alter table public.random_queue enable row level security;
