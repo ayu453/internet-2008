@@ -165,11 +165,17 @@ function App() {
       const state = channel.presenceState();
       const ids = Object.keys(state);
       setOnlineIds(ids);
-      setOnlineCount(ids.length);
+      // Presence includes the current user when visible; the UI count is other people only.
+      setOnlineCount(ids.filter(id => id !== session.user.id).length);
     }).subscribe((state) => {
       if (state === 'SUBSCRIBED') {
-        channel.track({ display_name: nickname || profile?.display_name || 'Internet Friend', status, online_at: new Date().toISOString() });
-        setConnectionLabel('Connected');
+        // Invisible must mean absent from Presence, not merely a visible status label.
+        if (status === 'Invisible') {
+          setConnectionLabel('Connected · invisible');
+        } else {
+          channel.track({ display_name: nickname || profile?.display_name || 'Internet Friend', status, online_at: new Date().toISOString() });
+          setConnectionLabel('Connected');
+        }
       } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
         setConnectionLabel('Connection issue');
       }
