@@ -216,7 +216,7 @@ function App() {
       if (!alive) return;
       if (peopleError) showNotice(`Some sender names could not load: ${peopleError.message}`);
       const mapped = (data || []).map(m => ({
-        id: m.id, room: m.room_id, senderId: m.sender_id,
+        id: m.id, room: m.room_id, senderId: m.sender_id, created_at: m.created_at,
         name: people?.find(p => p.id === m.sender_id)?.display_name || 'Internet Friend',
         body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         mine: m.sender_id === session.user.id
@@ -233,7 +233,7 @@ function App() {
         const m = payload.new;
         if (!alive || m.sender_id === session.user.id) return;
         const { data: person } = await supabase.from('profiles').select('display_name').eq('id', m.sender_id).maybeSingle();
-        pushMessage(room, { id: m.id, room, senderId: m.sender_id, name: person?.display_name || 'Internet Friend', body: m.body, time: nowTime(), mine: false });
+        pushMessage(room, { id: m.id, room, senderId: m.sender_id, created_at: m.created_at, name: person?.display_name || 'Internet Friend', body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), mine: false });
         setUnread(prev => ({ ...prev, [room]: (prev[room] || 0) + (document.hidden ? 1 : 0) }));
       }).subscribe((state) => {
         if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
@@ -285,7 +285,7 @@ function App() {
         sender_id: session.user.id, room_id: activeRoom, body
       }).select('id,created_at').single();
       if (error) return showNotice(`Message not sent: ${error.message}`);
-      pushMessage(activeRoom, { id: data.id, room: activeRoom, senderId: session.user.id, name: nickname || profile?.display_name || 'You', body, time: nowTime(), mine: true });
+      pushMessage(activeRoom, { id: data.id, room: activeRoom, senderId: session.user.id, created_at: data.created_at, name: nickname || profile?.display_name || 'You', body, time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), mine: true });
     } else {
       pushMessage(activeRoom, { id: localId(), room: activeRoom, senderId: identity, name: nickname || 'You', body, time: nowTime(), mine: true });
       showNotice('Local demo: sign in and connect Supabase for real shared chat.');
