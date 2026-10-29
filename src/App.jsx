@@ -331,13 +331,38 @@ function App() {
 
   const sendFriendRequest = async () => {
     const target = friendSearch.trim();
-    if (!session) return showNotice('Sign in to add permanent friends.');
-    if (!target) return showNotice('Enter the exact profile ID of the person you want to add.');
+    if (!session || !supabase) return showNotice('Sign in to add permanent friends.');
+    if (!target) return showNotice('Enter a display name to search.');
     if (target === session.user.id) return showNotice('You cannot add yourself.');
-    const { error } = await supabase.from('friend_requests').insert({ sender_id: session.user.id, receiver_id: target });
-    if (error) return showNotice(error.message);
-    setFriendSearch('');
-    showNotice('Friend request sent.');
+    setFriendSearchBusy(true);
+    try {
+      // Treat ordinary names as text. Only use an ID after confirming it is UUID-shaped.
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(target);
+      let query = supabase.from('profiles').select('id,display_name').neq('id', session.user.id).limit(10);
+      query = isUuid ? query.eq('id', target) : query.ilike('display_name', `%${target}%`);
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data?.length) {
+        showNotice('No matching profile found. Check the display name and try again.');
+        return;
+      }
+      if (data.length > 1) {
+        showNotice('Several profiles match. Enter a more specific display name or the profile UUID.');
+        return;
+      }
+      const person = data[0];
+      const { error: requestError } = await supabase.from('friend_requests').insert({
+        sender_id: session.user.id,
+        receiver_id: person.id
+      });
+      if (requestError) throw requestError;
+      setFriendSearch('');
+      showNotice(`Friend request sent to ${person.display_name}.`);
+    } catch (error) {
+      showNotice(`Friend search failed: ${error.message}`);
+    } finally {
+      setFriendSearchBusy(false);
+    }
   };
 
   const respondFriend = async (request, accept) => {
