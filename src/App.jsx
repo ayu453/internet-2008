@@ -84,6 +84,8 @@ function App() {
   const [connectionLabel, setConnectionLabel] = useState(isSupabaseConfigured ? 'Connecting…' : 'Local demo mode');
   const endRef = useRef(null);
   const roomComposerRef = useRef(null);
+  const activeAppRef = useRef(activeApp);
+  activeAppRef.current = activeApp;
   const inputRef = useRef(input);
   inputRef.current = input;
   const randomRequestRef = useRef(0);
@@ -328,7 +330,9 @@ function App() {
         if (!alive || m.sender_id === session.user.id) return;
         const { data: person } = await supabase.from('profiles').select('display_name').eq('id', m.sender_id).maybeSingle();
         pushMessage(room, { id: m.id, room, senderId: m.sender_id, created_at: m.created_at, name: person?.display_name || 'Internet Friend', body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), mine: false });
-        setUnread(prev => ({ ...prev, [room]: (prev[room] || 0) + (document.hidden ? 1 : 0) }));
+        if (document.hidden || activeRoom !== room || activeAppRef.current !== 'messenger') {
+          setUnread(prev => ({ ...prev, [room]: (prev[room] || 0) + 1 }));
+        }
       }).subscribe((state) => {
         if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
           showNotice(`Live updates for ${room} are unavailable. Check the Supabase Realtime setup.`);
