@@ -53,6 +53,8 @@ function App() {
   const [input, setInput] = useState('');
   const [friends, setFriends] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
   const [onlineCount, setOnlineCount] = useState(1);
   const [onlineIds, setOnlineIds] = useState([]);
   const [soundOn, setSoundOn] = useState(false);
@@ -194,6 +196,37 @@ function App() {
     })();
     return () => { alive = false; };
   }, [session, notice]);
+
+  useEffect(() => {
+    if (activeApp !== 'profile' || !session || !supabase) {
+      setBlockedUsers([]);
+      setBlockedLoading(false);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      setBlockedLoading(true);
+      try {
+        const { data: blocks, error } = await supabase.from('blocks')
+          .select('blocked_id').eq('blocker_id', session.user.id);
+        if (error) throw error;
+        const ids = (blocks || []).map(block => block.blocked_id);
+        if (!ids.length) {
+          if (alive) setBlockedUsers([]);
+          return;
+        }
+        const { data: people, error: peopleError } = await supabase.from('profiles')
+          .select('id,display_name').in('id', ids);
+        if (peopleError) throw peopleError;
+        if (alive) setBlockedUsers(people || []);
+      } catch (error) {
+        if (alive) showNotice(`Could not load blocked users: ${error.message}`);
+      } finally {
+        if (alive) setBlockedLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [activeApp, session, showNotice]);
 
   useEffect(() => {
     const target = friendSearch.trim();
@@ -724,6 +757,18 @@ function App() {
       : 'Person blocked. You have left the conversation.');
   };
 
+  const unblockUser = async (person) => {
+    if (!session || !supabase || !person?.id) return;
+    const { error } = await supabase.from('blocks').delete()
+      .eq('blocker_id', session.user.id).eq('blocked_id', person.id);
+    if (error) {
+      showNotice(`Could not unblock ${person.display_name || 'this person'}: ${error.message}`);
+      return;
+    }
+    setBlockedUsers(prev => prev.filter(user => user.id !== person.id));
+    showNotice(`${person.display_name || 'User'} can appear in future random matches again.`);
+  };
+
   const openFriend = async (friend) => {
     if (!session || !supabase) return showNotice('Sign in to message your friends.');
     setDmBusy(true);
@@ -933,7 +978,8 @@ function App() {
             </>}
           </div>}
 
-          {activeApp === 'profile' && <div className="page-panel profile-page"><div className="page-title"><UserRound/><div><h2>My profile</h2><p>Your little corner of the internet.</p></div></div><div className="profile-edit-card"><div className="avatar big">{(nickname||'I')[0].toUpperCase()}</div><label>Display name<input maxLength={24} value={nickname} onChange={e=>setNickname(e.target.value)}/></label><label>What are you up to?<input maxLength={80} value={statusText} onChange={e=>setStatusText(e.target.value)}/></label><label>Availability<select value={status} onChange={e=>setStatus(e.target.value)}><option>Available</option><option>Away</option><option>Busy</option><option>Invisible</option></select></label><button className="primary-button" onClick={async()=>{const nextName=nickname.trim().slice(0,24);const nextMood=statusText.trim().slice(0,80);if(!nextName)return showNotice('Choose a display name first.');if(session){const {error}=await supabase.from('profiles').update({display_name:nextName,mood:nextMood}).eq('id',session.user.id);if(error)return showNotice(error.message);}setNickname(nextName);setStatusText(nextMood);setProfile(prev=>prev?{...prev,display_name:nextName,mood:nextMood}:prev);localStorage.setItem('i2008-nickname',nextName);showNotice('Profile updated.');}}><UserCheck size={16}/> Save profile</button></div></div>}
+          {activeApp === 'profile' && <div className="page-panel profile-page"><div className="page-title"><UserRound/><div><h2>My profile</h2><p>Your little corner of the internet.</p></div></div><div className="profile-edit-card"><div className="avatar big">{(nickname||'I')[0].toUpperCase()}</div><label>Display name<input maxLength={24} value={nickname} onChange={e=>setNickname(e.target.value)}/></label><label>What are you up to?<input maxLength={80} value={statusText} onChange={e=>setStatusText(e.target.value)}/></label><label>Availability<select value={status} onChange={e=>setStatus(e.target.value)}><option>Available</option><option>Away</option><option>Busy</option><option>Invisible</option></select></label><button className="primary-button" onClick={async()=>{const nextName=nickname.trim().slice(0,24);const nextMood=statusText.trim().slice(0,80);if(!nextName)return showNotice('Choose a display name first.');if(session){const {error}=await supabase.from('profiles').update({display_name:nextName,mood:nextMood}).eq('id',session.user.id);if(error)return showNotice(error.message);}setNickname(nextName);setStatusText(nextMood);setProfile(prev=>prev?{...prev,display_name:nextName,mood:nextMood}:prev);localStorage.setItem('i2008-nickname',nextName);showNotice('Profile updated.');}}><UserCheck size={16}/> Save profile</button></div>
+            <section className="blocked-users-card"><div className="blocked-users-heading"><div><h3>Blocked users</h3><p>Blocked people are skipped by random matching.</p></div><span>{blockedUsers.length}</span></div>{blockedLoading ? <small className="muted">Loading blocked users…</small> : blockedUsers.length ? blockedUsers.map(person=><div className="friend-row" key={person.id}><div className="avatar small">{(person.display_name||'?')[0]}</div><div className="friend-info"><b>{person.display_name||'Internet Friend'}</b><small>Blocked by you</small></div><button className="secondary-button" onClick={()=>unblockUser(person)}>Unblock</button></div>) : <p className="blocked-empty">You haven't blocked anyone.</p>}</section></div>}
 
           <div className="statusbar"><span><span className="tiny-online"/> Ready</span><span>{session ? `Signed in: ${nickname}` : 'Guest session'}</span><span>Internet 2008 v1.0</span></div>
         </section>
