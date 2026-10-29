@@ -614,7 +614,7 @@ function App() {
     }
     const context = randomMessages.slice(-5)
       .map(message => `${message.name || 'User'}: ${message.body || ''}`)
-      .join('\\n')
+      .join('\n')
       .slice(0, 2000);
     const { error } = await supabase.from('reports').insert({
       reporter_id: session.user.id,
