@@ -929,7 +929,7 @@ function App() {
                 <div className="sidebar-heading">YOUR SHORTCUTS</div>
                 <button className="nav-row" onClick={() => setActiveApp('random')}><Search size={16}/> Random stranger <ChevronRight size={14}/></button>
                 <button className="nav-row" onClick={() => setActiveApp('friends')}><Users size={16}/> Buddy list <ChevronRight size={14}/></button>
-                <div className="sidebar-bottom"><span className="tiny-online"/>{onlineCount} friend{onlineCount === 1 ? '' : 's'} online <span className="demo-pill">{isSupabaseConfigured ? 'LIVE' : 'DEMO'}</span></div>
+                <div className="sidebar-bottom"><span className="tiny-online"/>{onlineCount} {onlineCount === 1 ? 'person' : 'people'} online <span className="demo-pill">{isSupabaseConfigured ? 'LIVE' : 'DEMO'}</span></div>
               </aside>
               <section className="chat-panel">
                 <div className="chat-heading">
