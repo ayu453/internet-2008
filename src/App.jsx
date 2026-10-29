@@ -14,6 +14,24 @@ const ROOMS = [
   { id: 'friendship', name: 'Friendship Corner', icon: Heart, description: 'Meet people, be kind', color: '#ffb7c7' }
 ];
 const EMOJIS = ['🙂','😂','😭','❤️','✨','👀','👍','🎮','☕','🌙','🤝','💿'];
+const DAILY_PROMPTS = [
+  'What tiny thing made your day better?',
+  'Which song feels like a memory?',
+  'What would you tell your 13-year-old self?',
+  'What is a harmless opinion you will defend forever?',
+  'What was your favourite corner of the old internet?',
+  'If tonight had a soundtrack, what would track one be?',
+  'What is something you wish people asked you more often?',
+  'Which fictional world would you visit for one afternoon?',
+  'What is a small win you are proud of lately?',
+  'What is a memory that still makes you smile?',
+  'What is one thing you want to learn this year?',
+  'What is your comfort game, show, or movie?',
+  'What would your perfect no-plans day look like?',
+  'What is a green flag in a friendship?'
+];
+const dayStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+const dailyPrompt = DAILY_PROMPTS[Number(dayStamp) % DAILY_PROMPTS.length];
 const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const localId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -812,6 +830,10 @@ function App() {
                   <button className="icon-button" title="Room details" onClick={() => showNotice('Be kind. No spam, harassment or sharing private information.')}><ShieldAlert size={17}/></button>
                 </div>
                 <div className="notice-bar"><Radio size={14}/> Welcome back to the old internet. Be kind to each other.</div>
+                <div className="daily-signal">
+                  <div className="daily-signal-copy"><span><Sparkles size={12}/> DAILY SIGNAL</span><p>{dailyPrompt}</p></div>
+                  <button type="button" onClick={() => setInput(current => current.trim() ? current : `Daily signal: ${dailyPrompt} — `)}>Answer in chat</button>
+                </div>
                 <div className="messages-area">
                   {roomMessages.length === 0 && <div className="empty-chat"><div className="empty-illustration">☕</div><h3>It’s quiet in here… for now.</h3><p>Say hi and start the conversation.</p><span className="empty-caption">“u there?” — 2008, probably</span></div>}
                   {roomMessages.map(m => <article className={`message ${m.mine ? 'mine' : ''}`} key={m.id}>
