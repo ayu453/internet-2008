@@ -518,36 +518,59 @@ function App() {
     }
   };
 
-  // A queued user must discover when another user creates their match.
-  // The matchmaking RPC removes both users from the queue, so queue polling alone
-  // cannot notify the first user; read the participant-visible active match row.
+  // Poll active matches and refresh the queue lease. This both discovers matches
+  // created by the other participant and lets SQL expire abandoned browser sessions.
   useEffect(() => {
     if (!session || !supabase || randomState !== 'searching') return;
     let alive = true;
     let checking = false;
     let lastPollErrorAt = 0;
+    let lastQueueRefreshAt = Date.now();
+    const activateMatch = async (match) => {
+      const partnerId = match.user_a === session.user.id ? match.user_b : match.user_a;
+      const { data: partner } = await supabase.from('profiles')
+        .select('id,display_name').eq('id', partnerId).maybeSingle();
+      if (!alive) return;
+      setMatchId(match.id);
+      setRandomPartner({ id: partnerId, name: partner?.display_name || 'Internet Friend' });
+      setRandomState('matched');
+      showNotice('You found someone to chat with!');
+    };
     const checkForMatch = async () => {
       if (!alive || checking) return;
       checking = true;
       try {
-        const { data, error } = await supabase.from('random_matches')
+        const { data: activeMatch, error } = await supabase.from('random_matches')
           .select('id,user_a,user_b')
           .eq('status', 'active')
           .or(`user_a.eq.${session.user.id},user_b.eq.${session.user.id}`)
           .limit(1)
           .maybeSingle();
         if (error) throw error;
-        if (!alive || !data) return;
-        const partnerId = data.user_a === session.user.id ? data.user_b : data.user_a;
-        const { data: partner } = await supabase.from('profiles')
-          .select('id,display_name').eq('id', partnerId).maybeSingle();
         if (!alive) return;
-        setMatchId(data.id);
-        setRandomPartner({ id: partnerId, name: partner?.display_name || 'Internet Friend' });
-        setRandomState('matched');
-        showNotice('You found someone to chat with!');
+        if (activeMatch) {
+          await activateMatch(activeMatch);
+          return;
+        }
+        // Renew every 12 seconds; the database removes queue entries older than 45 seconds.
+        if (Date.now() - lastQueueRefreshAt >= 12000) {
+          lastQueueRefreshAt = Date.now();
+          const { data: refreshed, error: refreshError } = await supabase.rpc('find_random_match');
+          if (!alive) return;
+          if (refreshError) {
+            // Another user may have matched us between the active-match read and this RPC.
+            if (!/already have an active match/i.test(refreshError.message || '')) throw refreshError;
+            return;
+          }
+          if (refreshed?.status === 'matched') {
+            await activateMatch({
+              id: refreshed.match_id,
+              user_a: session.user.id,
+              user_b: refreshed.partner_id
+            });
+          }
+        }
       } catch (error) {
-        // Keep polling through transient network/RLS failures; the server may still have us queued.
         if (alive && Date.now() - lastPollErrorAt > 5000) {
           lastPollErrorAt = Date.now();
           showNotice(`Could not check matching status; retrying: ${error.message}`);
