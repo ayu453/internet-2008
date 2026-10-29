@@ -592,16 +592,11 @@ function App() {
   };
 
   const respondFriend = async (request, accept) => {
-    const { error } = await supabase.from('friend_requests').update({ status: accept ? 'accepted' : 'rejected' }).eq('id', request.id);
-    if (error) return showNotice(error.message);
-    if (accept) {
-      const a = [session.user.id, request.sender_id].sort();
-      const { error: friendError } = await supabase.from('friendships').upsert(
-        { user_a: a[0], user_b: a[1] },
-        { onConflict: 'user_a,user_b', ignoreDuplicates: true }
-      );
-      if (friendError) return showNotice(friendError.message);
-    }
+    const { error } = await supabase.rpc('respond_friend_request', {
+      p_request_id: request.id,
+      p_accept: accept
+    });
+    if (error) return showNotice(error.message || 'Could not update friend request.');
     setFriendRequests(prev => prev.filter(r => r.id !== request.id));
     showNotice(accept ? 'Friend added!' : 'Request declined.');
   };
