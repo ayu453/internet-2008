@@ -66,6 +66,7 @@ create table if not exists public.friend_conversation_pairs (
   primary key (user_a, user_b),
   check (user_a < user_b)
 );
+alter table public.friend_conversation_pairs enable row level security;
 
 create table if not exists public.conversation_members (
   conversation_id uuid not null references public.conversations(id) on delete cascade,
@@ -161,9 +162,8 @@ create policy "members read conversation" on public.conversations for select to 
   exists (select 1 from public.conversation_members cm where cm.conversation_id=id and cm.user_id=auth.uid())
 );
 alter table public.conversation_members enable row level security;
-create policy "members see their conversations" on public.conversation_members for select to authenticated using (user_id=auth.uid() or exists (
-  select 1 from public.conversation_members cm where cm.conversation_id=public.conversation_members.conversation_id and cm.user_id=auth.uid()
-));
+drop policy if exists "members see their conversations" on public.conversation_members;
+create policy "users see own membership" on public.conversation_members for select to authenticated using (user_id = auth.uid());
 -- Membership insertion is intentionally not granted to clients; trusted server functions should create memberships.
 
 alter table public.private_messages enable row level security;
