@@ -357,13 +357,26 @@ function App() {
   };
 
   const signOut = async () => {
-    if (supabase && session) await supabase.auth.signOut();
-    // Clear user-scoped UI/cache immediately so another person using this browser
-    // cannot see the previous account's private conversation after sign-out.
+    // Invalidate pending matchmaking responses before leaving so a late RPC cannot
+    // restore a match after the user has signed out.
+    randomRequestRef.current += 1;
+    if (supabase && session) {
+      // Close any queued/active random match before ending the authenticated session.
+      // Cleanup failure must not prevent the user from signing out.
+      try {
+        await randomLeaveRef.current;
+        const { error: leaveError } = await supabase.rpc('leave_random_match');
+        if (leaveError) showNotice(`Random chat cleanup failed: ${leaveError.message}`);
+      } catch (error) {
+        showNotice(error.message || 'Random chat cleanup failed.');
+      }
+      await supabase.auth.signOut();
+    }
+    // Clear user-scoped UI/cache so another person using this browser cannot see
+    // the previous account's private conversation after sign-out.
     setSelectedFriend(null); setActiveConversationId(null); setDmMessages({});
     setFriendRequests([]); setFriends([]);
     setRandomState('idle'); setRandomPartner(null); setMatchId(null); setRandomMessages([]);
-    randomRequestRef.current += 1;
     setSession(null); setProfile(null); setGuestMode(false); setNickname('');
     localStorage.removeItem('i2008-nickname');
     setAuthPanel('welcome'); showNotice('Signed out.');
