@@ -17,7 +17,7 @@ This package contains the React/Vite web app, retro desktop UI, Supabase client 
 
 This is a complete starter project, not a deployed service. A working internet-wide service requires a Supabase project, environment variables, SQL migration, auth configuration, hosting, testing with multiple real accounts, and security/moderation review.
 
-The current UI's friend Message button is a placeholder; persistent friend-to-friend DM needs the conversation creation RPC and complete private chat screen. Random match queue returns "queued" when nobody is waiting; a production app should subscribe to queue/match state or poll a secure status RPC so the waiting client automatically notices a match. Do not publicly launch until these flows are completed and tested.
+Private friend-to-friend messaging UI and its conversation creation RPC are included on the `feat/friend-private-messaging` branch. Existing Supabase projects must also run `supabase/migrations/002_friend_private_messages.sql` after `supabase/schema.sql`; then verify sending, history, realtime delivery, and privacy with two separate authenticated accounts. Random match queue returns "queued" when nobody is waiting; a production app should subscribe to queue/match state or poll a secure status RPC so the waiting client automatically notices a match. Do not publicly launch until these flows are completed and tested.
 
 ## Requirements
 
@@ -53,9 +53,10 @@ The app runs in local demo mode until `.env` is filled in.
    ```
 
 4. In Supabase SQL Editor, run all of `supabase/schema.sql`.
-5. In Supabase Dashboard → Authentication → Sign In / Providers, enable **Anonymous Sign-Ins**. Email confirmation is not needed for this name-only flow.
-6. Restart `npm run dev` after editing `.env`.
-7. Open the app on two separate browsers/devices, enter a display name in each, and test public room messages.
+5. For an existing project that already has the schema, run `supabase/migrations/002_friend_private_messages.sql` to enable private friend conversations. Run it after the base schema.
+6. In Supabase Dashboard → Authentication → Sign In / Providers, enable **Anonymous Sign-Ins**. Email confirmation is not needed for this name-only flow.
+7. Restart `npm run dev` after editing `.env`.
+8. Open the app on two separate browsers/devices, enter a display name in each, and test public room messages and private messages between accepted friends.
 
 Never put a service-role/secret key in `.env` with a `VITE_` prefix or in browser code.
 
@@ -73,7 +74,7 @@ The production static output is in `dist/`. Host it on a static host such as Ver
 - [ ] Test anonymous sessions, reconnect behavior, and name persistence
 - [ ] Verify RLS using two different accounts
 - [ ] Verify a third account cannot read private conversations or match messages
-- [ ] Complete friend-to-friend private messaging UI and conversation creation RPC
+- [ ] Verify friend-to-friend private messaging with two accounts and confirm a third account cannot read conversations
 - [ ] Complete match status subscription so queued users are matched without manual retry
 - [ ] Add visible block/report workflows and moderation dashboard
 - [ ] Add message rate limiting and spam/abuse controls
