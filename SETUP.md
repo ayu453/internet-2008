@@ -11,13 +11,15 @@ This package contains the React/Vite web app, retro desktop UI, Supabase client 
 - Public room message history + realtime INSERT updates for authenticated users after database setup.
 - Presence channel for signed-in users.
 - Friend request UI and database operations.
-- Server-side random matching RPC scaffold and match chat message subscription.
+- Private friend conversation screen and message history/realtime flow after the private messaging migration is applied.
+- Server-side random matching RPC and match chat history/realtime subscription after database setup.
+- Public-room message reports and random-chat report/block actions after database setup; reports are stored in `public.reports` with message context, and blocks are stored in `public.blocks` and excluded from future random matches.
 
 ## Important limitations before public launch
 
 This is a complete starter project, not a deployed service. A working internet-wide service requires a Supabase project, environment variables, SQL migration, auth configuration, hosting, testing with multiple real accounts, and security/moderation review.
 
-The current UI's friend Message button is a placeholder; persistent friend-to-friend DM needs the conversation creation RPC and complete private chat screen. Random match queue returns "queued" when nobody is waiting; a production app should subscribe to queue/match state or poll a secure status RPC so the waiting client automatically notices a match. Do not publicly launch until these flows are completed and tested.
+Private friend-to-friend messaging UI and its conversation creation RPC are included on the `feat/friend-private-messaging` branch. Existing Supabase projects must run `supabase/migrations/002_friend_private_messages.sql` after the base schema, then `supabase/migrations/003_serialize_random_matchmaking.sql` to serialize concurrent match/leave requests, and `supabase/migrations/004_atomic_friend_request_response.sql` to make accepting a friend request and creating the friendship one transaction, followed by `supabase/migrations/005_resend_friend_requests.sql` to support safely re-sending rejected requests. Existing projects should then run `supabase/migrations/006_secure_friend_request_updates.sql` to remove the old direct-update policy, followed by `supabase/migrations/007_manage_blocked_users.sql` to allow unblocking, and `supabase/migrations/008_expire_random_queue.sql` to expire abandoned matchmaking queue entries. The client polls for a match while queued. Verify sending, history, realtime delivery, matching, and privacy with separate authenticated accounts. Do not publicly launch until these flows are completed and tested.
 
 ## Requirements
 
@@ -53,9 +55,12 @@ The app runs in local demo mode until `.env` is filled in.
    ```
 
 4. In Supabase SQL Editor, run all of `supabase/schema.sql`.
-5. In Supabase Dashboard → Authentication → Sign In / Providers, enable **Anonymous Sign-Ins**. Email confirmation is not needed for this name-only flow.
-6. Restart `npm run dev` after editing `.env`.
-7. Open the app on two separate browsers/devices, enter a display name in each, and test public room messages.
+5. For an existing project that already has the schema, run `supabase/migrations/002_friend_private_messages.sql` after the base schema to enable private friend conversations.
+6. Run `supabase/migrations/003_serialize_random_matchmaking.sql` to prevent overlapping match/leave RPCs from assigning a user to multiple active matches.
+7. Run `supabase/migrations/004_atomic_friend_request_response.sql` so accepting a request and creating its friendship succeed or fail together. Run `supabase/migrations/005_resend_friend_requests.sql` to safely allow re-sending rejected requests and prevent duplicate pending requests. Then run `supabase/migrations/006_secure_friend_request_updates.sql` to remove the unsafe direct-update policy from existing databases, followed by `supabase/migrations/007_manage_blocked_users.sql` to let users unblock accounts they blocked, and `supabase/migrations/008_expire_random_queue.sql` to clean up abandoned random-match queue entries.
+8. In Supabase Dashboard → Authentication → Sign In / Providers, enable **Anonymous Sign-Ins**. Email confirmation is not needed for this name-only flow.
+9. Restart `npm run dev` after editing `.env`.
+10. Open the app on two separate browsers/devices, enter a display name in each, and test public room messages, random matching, and private messages between accepted friends.
 
 Never put a service-role/secret key in `.env` with a `VITE_` prefix or in browser code.
 
@@ -73,9 +78,13 @@ The production static output is in `dist/`. Host it on a static host such as Ver
 - [ ] Test anonymous sessions, reconnect behavior, and name persistence
 - [ ] Verify RLS using two different accounts
 - [ ] Verify a third account cannot read private conversations or match messages
-- [ ] Complete friend-to-friend private messaging UI and conversation creation RPC
-- [ ] Complete match status subscription so queued users are matched without manual retry
-- [ ] Add visible block/report workflows and moderation dashboard
+- [ ] Verify reports can only be submitted by the reporting user and blocks prevent future matches in a multi-account test
+- [ ] Verify users can view and unblock their own blocked-user list
+- [ ] Verify friend-to-friend private messaging with two accounts and confirm a third account cannot read conversations
+- [ ] Verify queued users automatically transition to matched state when a second user joins
+- [ ] Verify queue leases refresh during long waits and abandoned queue entries expire
+- [x] Add user-facing report/block actions for random chat (requires the database schema)
+- [ ] Add a moderator review dashboard and an abuse-response process for submitted reports
 - [ ] Add message rate limiting and spam/abuse controls
 - [ ] Add privacy policy, retention/deletion rules and account deletion
 - [ ] Test reconnect, mobile layout, accessibility and keyboard behavior

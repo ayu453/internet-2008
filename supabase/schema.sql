@@ -135,7 +135,8 @@ create policy "users send room messages as self" on public.messages for insert t
 alter table public.friend_requests enable row level security;
 create policy "sender or receiver can read requests" on public.friend_requests for select to authenticated using (auth.uid() in (sender_id, receiver_id));
 create policy "users send requests as self" on public.friend_requests for insert to authenticated with check (auth.uid() = sender_id);
-create policy "receiver can respond" on public.friend_requests for update to authenticated using (auth.uid() = receiver_id and status = 'pending') with check (auth.uid() = receiver_id and status in ('accepted','rejected'));
+-- Friend requests are accepted/rejected only through respond_friend_request(),
+-- which locks and validates the row before updating it transactionally.
 
 alter table public.friendships enable row level security;
 create policy "friends can read own friendship" on public.friendships for select to authenticated using (auth.uid() in (user_a,user_b));
@@ -147,22 +148,129 @@ create policy "users create friendship from accepted request" on public.friendsh
   )
 );
 
+-- Respond and create the friendship in one transaction so a failed insert cannot
+-- leave a request accepted while the users are not friends.
+create or replace function public.respond_friend_request(p_request_id uuid, p_accept boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  me uuid := auth.uid();
+  req public.friend_requests%rowtype;
+  a uuid;
+  b uuid;
+begin
+  if me is null then raise exception 'Sign in required'; end if;
+  select * into req from public.friend_requests
+    where id = p_request_id for update;
+  if not found or req.receiver_id <> me then
+    raise exception 'Friend request not found';
+  end if;
+  if req.status <> 'pending' then
+    raise exception 'Friend request is no longer pending';
+  end if;
+
+  update public.friend_requests
+    set status = case when p_accept then 'accepted' else 'rejected' end
+    where id = req.id;
+
+  if p_accept then
+    a := least(req.sender_id, req.receiver_id);
+    b := greatest(req.sender_id, req.receiver_id);
+    insert into public.friendships(user_a, user_b)
+      values (a, b) on conflict (user_a, user_b) do nothing;
+  end if;
+end;
+$;
+revoke all on function public.respond_friend_request(uuid, boolean) from public;
+grant execute on function public.respond_friend_request(uuid, boolean) to authenticated;
+
+-- Send or safely re-send a friend request without duplicate pending requests.
+create or replace function public.send_friend_request(p_receiver_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  me uuid := auth.uid();
+  a uuid;
+  b uuid;
+  existing_status text;
+begin
+  if me is null then raise exception 'Sign in required'; end if;
+  if p_receiver_id is null or p_receiver_id = me then
+    raise exception 'Choose another user';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_receiver_id) then
+    raise exception 'Profile not found';
+  end if;
+
+  a := least(me, p_receiver_id);
+  b := greatest(me, p_receiver_id);
+  -- Serialize both request directions for this pair.
+  perform pg_advisory_xact_lock(hashtextextended(a::text || ':' || b::text, 0));
+
+  if exists (select 1 from public.friendships f where f.user_a = a and f.user_b = b) then
+    raise exception 'You are already friends';
+  end if;
+  if exists (
+    select 1 from public.friend_requests fr
+    where fr.status = 'pending'
+      and ((fr.sender_id = me and fr.receiver_id = p_receiver_id)
+        or (fr.sender_id = p_receiver_id and fr.receiver_id = me))
+  ) then
+    raise exception 'A friend request is already pending between you';
+  end if;
+
+  select status into existing_status
+    from public.friend_requests
+    where sender_id = me and receiver_id = p_receiver_id
+    for update;
+  if found then
+    if existing_status = 'rejected' then
+      update public.friend_requests
+        set status = 'pending', created_at = now()
+        where sender_id = me and receiver_id = p_receiver_id;
+      return;
+    end if;
+    raise exception 'This friend request has already been processed';
+  end if;
+
+  insert into public.friend_requests(sender_id, receiver_id, status)
+    values (me, p_receiver_id, 'pending');
+end;
+$;
+revoke all on function public.send_friend_request(uuid) from public;
+grant execute on function public.send_friend_request(uuid) to authenticated;
+
+
 alter table public.conversations enable row level security;
 create policy "members read conversation" on public.conversations for select to authenticated using (
   exists (select 1 from public.conversation_members cm where cm.conversation_id=id and cm.user_id=auth.uid())
 );
 alter table public.conversation_members enable row level security;
-create policy "members see their conversations" on public.conversation_members for select to authenticated using (user_id=auth.uid() or exists (
-  select 1 from public.conversation_members cm where cm.conversation_id=conversation_id and cm.user_id=auth.uid()
-));
+-- Avoid recursive RLS evaluation: each user can see only their own membership rows.
+create policy "users see own membership" on public.conversation_members
+  for select to authenticated using (user_id = auth.uid());
 -- Membership insertion is intentionally not granted to clients; trusted server functions should create memberships.
 
 alter table public.private_messages enable row level security;
 create policy "conversation members read private messages" on public.private_messages for select to authenticated using (
-  exists (select 1 from public.conversation_members cm where cm.conversation_id=conversation_id and cm.user_id=auth.uid())
+  exists (
+    select 1 from public.conversation_members cm
+    where cm.conversation_id = private_messages.conversation_id
+      and cm.user_id = auth.uid()
+  )
 );
 create policy "members send private messages" on public.private_messages for insert to authenticated with check (
-  auth.uid()=sender_id and exists (select 1 from public.conversation_members cm where cm.conversation_id=conversation_id and cm.user_id=auth.uid())
+  auth.uid() = sender_id and exists (
+    select 1 from public.conversation_members cm
+    where cm.conversation_id = private_messages.conversation_id
+      and cm.user_id = auth.uid()
+  )
 );
 
 alter table public.random_queue enable row level security;
@@ -184,6 +292,7 @@ create policy "participants send match messages" on public.random_match_messages
 alter table public.blocks enable row level security;
 create policy "users read blocks they created" on public.blocks for select to authenticated using (auth.uid()=blocker_id);
 create policy "users block others" on public.blocks for insert to authenticated with check (auth.uid()=blocker_id);
+create policy "users unblock others" on public.blocks for delete to authenticated using (auth.uid()=blocker_id);
 
 alter table public.reports enable row level security;
 create policy "users create reports as self" on public.reports for insert to authenticated with check (auth.uid()=reporter_id);
@@ -203,6 +312,10 @@ declare
   partner_name text;
 begin
   if me is null then raise exception 'Sign in required'; end if;
+  -- Serialize matchmaking and leaving so a user cannot be claimed by overlapping requests.
+  perform pg_advisory_xact_lock(20081008::bigint);
+  -- Remove abandoned queue entries; active clients refresh their queue lease periodically.
+  delete from public.random_queue where queued_at < now() - interval '45 seconds';
   if exists (select 1 from random_matches where status='active' and me in (user_a,user_b)) then
     raise exception 'You already have an active match';
   end if;
@@ -213,8 +326,8 @@ begin
     and not exists (select 1 from blocks b where (b.blocker_id=me and b.blocked_id=q.user_id) or (b.blocker_id=q.user_id and b.blocked_id=me))
     and not exists (select 1 from random_matches rm where rm.status='active' and q.user_id in (rm.user_a,rm.user_b))
   order by q.queued_at
-  for update skip locked
-  limit 1;
+  limit 1
+  for update skip locked;
   if partner is null then
     return jsonb_build_object('status','queued');
   end if;
@@ -236,6 +349,8 @@ as $$
 declare me uuid := auth.uid();
 begin
   if me is null then raise exception 'Sign in required'; end if;
+  -- Use the same lock as find_random_match to avoid leave/start races.
+  perform pg_advisory_xact_lock(20081008::bigint);
   delete from random_queue where user_id=me;
   update random_matches set status='ended',ended_at=now()
     where status='active' and me in (user_a,user_b);
