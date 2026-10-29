@@ -292,6 +292,7 @@ create policy "participants send match messages" on public.random_match_messages
 alter table public.blocks enable row level security;
 create policy "users read blocks they created" on public.blocks for select to authenticated using (auth.uid()=blocker_id);
 create policy "users block others" on public.blocks for insert to authenticated with check (auth.uid()=blocker_id);
+create policy "users unblock others" on public.blocks for delete to authenticated using (auth.uid()=blocker_id);
 
 alter table public.reports enable row level security;
 create policy "users create reports as self" on public.reports for insert to authenticated with check (auth.uid()=reporter_id);
