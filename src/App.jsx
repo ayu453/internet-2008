@@ -194,7 +194,12 @@ function App() {
 
   const roomMessages = messages[activeRoom] || [];
   const pushMessage = useCallback((room, message) => {
-    setMessages(prev => ({ ...prev, [room]: [...(prev[room] || []), message].slice(-300) }));
+    setMessages(prev => {
+      const current = prev[room] || [];
+      // History and Realtime can deliver the same row; keep each database message once.
+      if (current.some(existing => existing.id === message.id)) return prev;
+      return { ...prev, [room]: [...current, message].slice(-300) };
+    });
   }, []);
 
   useEffect(() => {
