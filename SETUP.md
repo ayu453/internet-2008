@@ -11,6 +11,7 @@ This package contains the React/Vite web app, retro desktop UI, Supabase client 
 - Public room message history + realtime INSERT updates for authenticated users after database setup.
 - Presence channel for signed-in users.
 - Friend request UI and database operations.
+- Private friend conversation screen and message history/realtime flow after the private messaging migration is applied.
 - Server-side random matching RPC scaffold and match chat message subscription.
 
 ## Important limitations before public launch
