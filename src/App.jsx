@@ -63,6 +63,7 @@ function App() {
   const inputRef = useRef(input);
   inputRef.current = input;
   const randomRequestRef = useRef(0);
+  const randomLeaveRef = useRef(Promise.resolve());
   const realtimeRef = useRef([]);
   const identity = session?.user?.id || profile?.id || 'guest';
 
@@ -370,6 +371,9 @@ function App() {
     }
     const requestId = ++randomRequestRef.current;
     setRandomState('searching'); setRandomPartner(null); setMatchId(null); setRandomMessages([]);
+    // Finish leaving the previous match before asking the server for another one.
+    await randomLeaveRef.current;
+    if (requestId !== randomRequestRef.current) return;
     const { data, error } = await supabase.rpc('find_random_match');
     // Ignore a late response if the user cancelled or started another search.
     if (requestId !== randomRequestRef.current) return;
@@ -435,8 +439,14 @@ function App() {
     randomRequestRef.current += 1;
     setRandomState('idle'); setRandomPartner(null); setRandomMessages([]); setMatchId(null);
     if (session && supabase) {
-      const { error } = await supabase.rpc('leave_random_match');
-      if (error) showNotice(error.message);
+      const leaveOperation = (async () => {
+        const { error } = await supabase.rpc('leave_random_match');
+        if (error) throw error;
+      })();
+      randomLeaveRef.current = leaveOperation.catch(error => {
+        showNotice(error.message || 'Could not leave the current match.');
+      });
+      await randomLeaveRef.current;
     }
   };
 
