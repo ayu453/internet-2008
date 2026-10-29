@@ -301,6 +301,36 @@ function App() {
     }
   };
 
+  // A queued user must learn when another user joins and the server creates a match.
+  useEffect(() => {
+    if (randomState !== 'searching' || !session || !supabase) return;
+    let alive = true;
+    let checking = false;
+    const checkMatch = async () => {
+      if (checking || !alive) return;
+      checking = true;
+      try {
+        const { data, error } = await supabase.rpc('get_random_match_status');
+        if (error) throw error;
+        if (!alive || data?.status !== 'matched') return;
+        setMatchId(data.match_id);
+        setRandomPartner({ id: data.partner_id, name: data.partner_name || 'Internet Friend' });
+        setRandomState('matched');
+        showNotice('Someone is here — you are connected!');
+      } catch (error) {
+        if (alive) {
+          setRandomState('idle');
+          showNotice(`Could not check match status: ${error.message}`);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+    checkMatch();
+    const timer = window.setInterval(checkMatch, 2500);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [randomState, session, showNotice]);
+
   const cancelRandomChat = async () => {
     if (session && supabase) {
       const { error } = await supabase.rpc('leave_random_match');
@@ -321,13 +351,25 @@ function App() {
 
   useEffect(() => {
     if (!session || !matchId || !supabase) return;
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.from('random_match_messages')
+        .select('id,sender_id,body,created_at').eq('match_id', matchId)
+        .order('created_at', { ascending: true }).limit(100);
+      if (!alive || error) return;
+      setRandomMessages((data || []).map(m => ({
+        id: m.id, mine: m.sender_id === session.user.id,
+        name: m.sender_id === session.user.id ? (nickname || 'You') : (randomPartner?.name || 'Stranger'),
+        body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })));
+    })();
     const channel = supabase.channel(`random-match:${matchId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'random_match_messages', filter: `match_id=eq.${matchId}` }, async ({ new: m }) => {
-        if (m.sender_id === session.user.id) return;
+        if (!alive || m.sender_id === session.user.id) return;
         setRandomMessages(prev => [...prev, { id: m.id, mine: false, name: randomPartner?.name || 'Stranger', body: m.body, time: nowTime() }]);
       }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session, matchId, randomPartner]);
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [session, matchId, randomPartner, nickname]);
 
   const sendFriendRequest = async () => {
     const target = friendSearch.trim();
