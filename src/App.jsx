@@ -109,14 +109,34 @@ function App() {
     (async () => {
       const user = session.user;
       const fallbackName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Internet Friend';
-      const { data, error } = await supabase.from('profiles')
-        .upsert({ id: user.id, display_name: fallbackName }, { onConflict: 'id' })
-        .select().single();
-      if (alive) {
-        if (error) showNotice(`Profile setup: ${error.message}`);
-        setProfile(data || { id: user.id, display_name: fallbackName });
-        setNickname(data?.display_name || fallbackName);
-        localStorage.setItem('i2008-nickname', data?.display_name || fallbackName);
+      try {
+        // Read first instead of upserting on every login: an upsert would overwrite
+        // a display name or mood the user deliberately saved on their profile.
+        const { data: existing, error: lookupError } = await supabase.from('profiles')
+          .select('id,display_name,mood').eq('id', user.id).maybeSingle();
+        if (lookupError) throw lookupError;
+        let data = existing;
+        if (!data) {
+          const { error: insertError } = await supabase.from('profiles')
+            .insert({ id: user.id, display_name: fallbackName });
+          if (insertError && insertError.code !== '23505') throw insertError;
+          const { data: created, error: fetchError } = await supabase.from('profiles')
+            .select('id,display_name,mood').eq('id', user.id).single();
+          if (fetchError) throw fetchError;
+          data = created;
+        }
+        if (!alive) return;
+        const savedName = data.display_name || fallbackName;
+        setProfile(data);
+        setNickname(savedName);
+        setStatusText(data.mood || 'Listening to old internet');
+        localStorage.setItem('i2008-nickname', savedName);
+      } catch (error) {
+        if (!alive) return;
+        showNotice(`Profile setup: ${error.message}`);
+        setProfile({ id: user.id, display_name: fallbackName });
+        setNickname(fallbackName);
+        localStorage.setItem('i2008-nickname', fallbackName);
       }
     })();
     return () => { alive = false; };
