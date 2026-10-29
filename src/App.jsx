@@ -78,6 +78,7 @@ function App() {
   const [statusText, setStatusText] = useState('Listening to old internet');
   const [connectionLabel, setConnectionLabel] = useState(isSupabaseConfigured ? 'Connecting…' : 'Local demo mode');
   const endRef = useRef(null);
+  const roomComposerRef = useRef(null);
   const inputRef = useRef(input);
   inputRef.current = input;
   const randomRequestRef = useRef(0);
@@ -852,7 +853,7 @@ function App() {
                 <div className="notice-bar"><Radio size={14}/> Welcome back to the old internet. Be kind to each other.</div>
                 <div className="daily-signal">
                   <div className="daily-signal-copy"><span><Sparkles size={12}/> DAILY SIGNAL</span><p>{dailyPrompt}</p></div>
-                  <button type="button" onClick={() => setInput(current => current.trim() ? current : `Daily signal: ${dailyPrompt} — `)}>Answer in chat</button>
+                  <button type="button" onClick={() => {setInput(current => current.trim() ? current : `Daily signal: ${dailyPrompt} — `);roomComposerRef.current?.focus();}}>Answer in chat</button>
                 </div>
                 <div className="messages-area">
                   {roomMessages.length === 0 && <div className="empty-chat"><div className="empty-illustration">☕</div><h3>It’s quiet in here… for now.</h3><p>Say hi and start the conversation.</p><span className="empty-caption">“u there?” — 2008, probably</span></div>}
@@ -865,7 +866,7 @@ function App() {
                 <form className="composer" onSubmit={sendRoomMessage}>
                   {showEmoji && <div className="emoji-picker">{EMOJIS.map(e => <button type="button" key={e} onClick={() => setInput(v => v + e)}>{e}</button>)}</div>}
                   <div className="composer-tools"><button type="button" onClick={() => setShowEmoji(v => !v)} title="Emojis"><Smile size={17}/></button><span>Message {currentRoom.name}</span><span className="char-count">{input.length}/1000</span></div>
-                  <div className="composer-bottom"><textarea value={input} maxLength={1000} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendRoomMessage(e); } }} placeholder="Type a message… (Enter to send)" rows={2}/><button className="send-button" type="submit" disabled={!input.trim()}><Send size={17}/><span>Send</span></button></div>
+                  <div className="composer-bottom"><textarea ref={roomComposerRef} value={input} maxLength={1000} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendRoomMessage(e); } }} placeholder="Type a message… (Enter to send)" rows={2}/><button className="send-button" type="submit" disabled={!input.trim()}><Send size={17}/><span>Send</span></button></div>
                 </form>
               </section>
             </div>
