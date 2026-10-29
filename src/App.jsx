@@ -184,7 +184,7 @@ function App() {
     if (!person?.id) return showNotice('That profile could not be selected.');
     setFriendSearchBusy(true);
     try {
-      const { error } = await supabase.from('friend_requests').insert({ sender_id: session.user.id, receiver_id: person.id });
+      const { error } = await supabase.rpc('send_friend_request', { p_receiver_id: person.id });
       if (error) throw error;
       setFriendSearch('');
       setFriendSearchResults([]);
@@ -577,9 +577,8 @@ function App() {
         return;
       }
       const person = data[0];
-      const { error: requestError } = await supabase.from('friend_requests').insert({
-        sender_id: session.user.id,
-        receiver_id: person.id
+      const { error: requestError } = await supabase.rpc('send_friend_request', {
+        p_receiver_id: person.id
       });
       if (requestError) throw requestError;
       setFriendSearch('');
