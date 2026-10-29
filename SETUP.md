@@ -17,7 +17,7 @@ This package contains the React/Vite web app, retro desktop UI, Supabase client 
 
 This is a complete starter project, not a deployed service. A working internet-wide service requires a Supabase project, environment variables, SQL migration, auth configuration, hosting, testing with multiple real accounts, and security/moderation review.
 
-The current UI's friend Message button is a placeholder; persistent friend-to-friend DM needs the conversation creation RPC and complete private chat screen. Random match queue returns "queued" when nobody is waiting; a production app should subscribe to queue/match state or poll a secure status RPC so the waiting client automatically notices a match. Do not publicly launch until these flows are completed and tested.
+The current UI's friend Message button is a placeholder; persistent friend-to-friend DM needs the conversation creation RPC and complete private chat screen. Random matching now polls the `get_random_match_status()` RPC while waiting, and loads prior messages after a match is found. Run the updated `supabase/schema.sql` in the Supabase SQL Editor to create the status RPC before testing this change. Test with two separate authenticated sessions; do not publicly launch until these flows and moderation are reviewed.
 
 ## Requirements
 
@@ -74,7 +74,8 @@ The production static output is in `dist/`. Host it on a static host such as Ver
 - [ ] Verify RLS using two different accounts
 - [ ] Verify a third account cannot read private conversations or match messages
 - [ ] Complete friend-to-friend private messaging UI and conversation creation RPC
-- [ ] Complete match status subscription so queued users are matched without manual retry
+- [x] Add match status polling so queued users notice a match without manual retry (requires updated schema)
+- [ ] Add a server-side conversation creation RPC and complete friend-to-friend private messaging
 - [ ] Add visible block/report workflows and moderation dashboard
 - [ ] Add message rate limiting and spam/abuse controls
 - [ ] Add privacy policy, retention/deletion rules and account deletion
