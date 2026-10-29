@@ -279,25 +279,28 @@ function App() {
   const sendRoomMessage = async (event) => {
     event?.preventDefault();
     const body = input.trim();
+    const sendingRoom = activeRoom;
+    const sendingUserId = session?.user?.id;
     if (!body) return;
     if (body.length > 1000) return showNotice('Message is too long (max 1000 characters).');
     if (session && supabase) {
       // Anonymous sign-in can finish before the profile upsert effect; ensure the FK target exists before sending.
       const { error: profileError } = await supabase.from('profiles').upsert(
-        { id: session.user.id, display_name: (nickname || profile?.display_name || 'Internet Friend').slice(0, 24) },
+        { id: sendingUserId, display_name: (nickname || profile?.display_name || 'Internet Friend').slice(0, 24) },
         { onConflict: 'id', ignoreDuplicates: true }
       );
       if (profileError) return showNotice(`Message not sent: profile setup failed: ${profileError.message}`);
       const { data, error } = await supabase.from('messages').insert({
-        sender_id: session.user.id, room_id: activeRoom, body
+        sender_id: sendingUserId, room_id: sendingRoom, body
       }).select('id,created_at').single();
       if (error) return showNotice(`Message not sent: ${error.message}`);
-      pushMessage(activeRoom, { id: data.id, room: activeRoom, senderId: session.user.id, created_at: data.created_at, name: nickname || profile?.display_name || 'You', body, time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), mine: true });
+      pushMessage(sendingRoom, { id: data.id, room: sendingRoom, senderId: sendingUserId, created_at: data.created_at, name: nickname || profile?.display_name || 'You', body, time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), mine: true });
     } else {
-      pushMessage(activeRoom, { id: localId(), room: activeRoom, senderId: identity, name: nickname || 'You', body, time: nowTime(), mine: true });
+      pushMessage(sendingRoom, { id: localId(), room: sendingRoom, senderId: identity, name: nickname || 'You', body, time: nowTime(), mine: true });
       showNotice('Local demo: sign in and connect Supabase for real shared chat.');
     }
-    setInput('');
+    // A room switch or new draft while saving must not clear the user's current composer.
+    if (activeRoom === sendingRoom && inputRef.current.trim() === body) setInput('');
     setShowEmoji(false);
     if (soundOn) playPing();
   };
@@ -447,11 +450,12 @@ function App() {
     setRandomMessages(prev => {
       if (prev.some(message => message.id === data.id)) return prev;
       return [...prev, {
-        id: data.id, mine: true, name: nickname || 'You', body,
+        id: data.id, created_at: data.created_at, mine: true, name: nickname || 'You', body,
         time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }].slice(-200);
     });
-    setInput('');
+    // Preserve text typed after this send began, or text for a different screen.
+    if (matchId === sendingMatchId && inputRef.current.trim() === body) setInput('');
   };
 
   useEffect(() => {
