@@ -1,4 +1,9 @@
 -- INTERNET 2008: make friend-request responses atomic on existing projects.
+
+-- Remove direct client updates: the old policy let receivers alter sender_id/receiver_id
+-- while changing status, which could be abused to forge an accepted friendship.
+drop policy if exists "receiver can respond" on public.friend_requests;
+
 -- This prevents a request from being marked accepted if friendship creation fails.
 
 create or replace function public.respond_friend_request(p_request_id uuid, p_accept boolean)
