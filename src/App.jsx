@@ -221,7 +221,12 @@ function App() {
         body: m.body, time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         mine: m.sender_id === session.user.id
       }));
-      setMessages(prev => ({ ...prev, [room]: mapped }));
+      // Merge history with any realtime messages received while the initial query was in flight.
+      setMessages(prev => {
+        const existing = prev[room] || [];
+        const byId = new Map([...mapped, ...existing].map(message => [message.id, message]));
+        return { ...prev, [room]: [...byId.values()].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).slice(-300) };
+      });
     })();
     const channel = supabase.channel(`room:${room}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${room}` }, async (payload) => {
@@ -270,6 +275,12 @@ function App() {
     if (!body) return;
     if (body.length > 1000) return showNotice('Message is too long (max 1000 characters).');
     if (session && supabase) {
+      // Anonymous sign-in can finish before the profile upsert effect; ensure the FK target exists before sending.
+      const { error: profileError } = await supabase.from('profiles').upsert(
+        { id: session.user.id, display_name: (nickname || profile?.display_name || 'Internet Friend').slice(0, 24) },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
+      if (profileError) return showNotice(`Message not sent: profile setup failed: ${profileError.message}`);
       const { data, error } = await supabase.from('messages').insert({
         sender_id: session.user.id, room_id: activeRoom, body
       }).select('id,created_at').single();
