@@ -608,7 +608,11 @@ function App() {
             time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }].slice(-200) };
         });
-      }).subscribe();
+      }).subscribe((state) => {
+        if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
+          if (alive) showNotice('Private chat live updates are unavailable. Check the Supabase Realtime setup.');
+        }
+      });
     return () => { alive = false; supabase.removeChannel(channel); };
   }, [session, activeConversationId, activeApp, selectedFriend, nickname, showNotice]);
 
