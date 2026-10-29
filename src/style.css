@@ -35,3 +35,13 @@
 .friend-dm-transcript .empty-state{margin:auto;max-width:280px}
 .friend-dm-panel .composer{flex-shrink:0}
 @media(max-width:600px){.friend-dm-panel{height:calc(100% - 55px)}.friend-dm-header{align-items:flex-start}.friend-dm-person{margin-left:0;width:100%}.friend-dm-transcript{min-height:130px;padding:9px}}
+
+
+/* Daily Signal: a lightweight, repeatable conversation starter. */
+.daily-signal{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;background:linear-gradient(110deg,#fff8e8,#f5f0ff);border-bottom:1px solid #e9dfcf;flex-shrink:0}
+.daily-signal-copy{min-width:0}
+.daily-signal-copy>span{display:flex;align-items:center;gap:5px;color:#9a7440;font:700 8px 'DM Mono',monospace;letter-spacing:.11em}
+.daily-signal-copy p{margin:4px 0 0;color:#46546b;font-size:11px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.daily-signal button{flex-shrink:0;border:1px solid #cbb58d;border-radius:6px;background:#fffdf8;color:#76582e;padding:7px 10px;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap}
+.daily-signal button:hover{background:#f8edda}
+@media(max-width:600px){.daily-signal{padding:8px 10px;gap:7px}.daily-signal-copy p{font-size:10px}.daily-signal button{padding:7px;font-size:8px}}
