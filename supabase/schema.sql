@@ -244,6 +244,44 @@ $$;
 revoke all on function public.leave_random_match() from public;
 grant execute on function public.leave_random_match() to authenticated;
 
+-- Let a queued client discover when another user has matched with them.
+create or replace function public.get_random_match_status()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  me uuid := auth.uid();
+  active_match random_matches%rowtype;
+  partner uuid;
+  partner_name text;
+begin
+  if me is null then raise exception 'Sign in required'; end if;
+
+  select * into active_match
+  from random_matches rm
+  where rm.status = 'active' and me in (rm.user_a, rm.user_b)
+  limit 1;
+
+  if active_match.id is not null then
+    partner := case when active_match.user_a = me then active_match.user_b else active_match.user_a end;
+    select display_name into partner_name from profiles where id = partner;
+    return jsonb_build_object(
+      'status', 'matched', 'match_id', active_match.id,
+      'partner_id', partner, 'partner_name', partner_name
+    );
+  end if;
+
+  if exists (select 1 from random_queue where user_id = me) then
+    return jsonb_build_object('status', 'queued');
+  end if;
+  return jsonb_build_object('status', 'idle');
+end;
+$;
+revoke all on function public.get_random_match_status() from public;
+grant execute on function public.get_random_match_status() to authenticated;
+
 -- Add tables to Realtime publication (safe to run more than once).
 do $$
 begin
