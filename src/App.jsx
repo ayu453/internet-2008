@@ -378,6 +378,25 @@ function App() {
     // Ignore a late response if the user cancelled or started another search.
     if (requestId !== randomRequestRef.current) return;
     if (error) {
+      // Recover a match left active by a refresh or a previous interrupted request.
+      const { data: activeMatch } = await supabase.from('random_matches')
+        .select('id,user_a,user_b')
+        .eq('status', 'active')
+        .or(`user_a.eq.${session.user.id},user_b.eq.${session.user.id}`)
+        .limit(1)
+        .maybeSingle();
+      if (requestId !== randomRequestRef.current) return;
+      if (activeMatch) {
+        const partnerId = activeMatch.user_a === session.user.id ? activeMatch.user_b : activeMatch.user_a;
+        const { data: partner } = await supabase.from('profiles')
+          .select('id,display_name').eq('id', partnerId).maybeSingle();
+        if (requestId !== randomRequestRef.current) return;
+        setRandomState('matched');
+        setMatchId(activeMatch.id);
+        setRandomPartner({ id: partnerId, name: partner?.display_name || 'Internet Friend' });
+        showNotice('Reconnected to your active chat.');
+        return;
+      }
       setRandomState('idle');
       return showNotice(`Matching unavailable: ${error.message}. Deploy the database SQL first.`);
     }
