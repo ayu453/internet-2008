@@ -416,6 +416,7 @@ function App() {
     if (!session || !supabase || randomState !== 'searching') return;
     let alive = true;
     let checking = false;
+    let lastPollErrorAt = 0;
     const checkForMatch = async () => {
       if (!alive || checking) return;
       checking = true;
@@ -437,9 +438,10 @@ function App() {
         setRandomState('matched');
         showNotice('You found someone to chat with!');
       } catch (error) {
-        if (alive) {
-          setRandomState('idle');
-          showNotice(`Could not check matching status: ${error.message}`);
+        // Keep polling through transient network/RLS failures; the server may still have us queued.
+        if (alive && Date.now() - lastPollErrorAt > 5000) {
+          lastPollErrorAt = Date.now();
+          showNotice(`Could not check matching status; retrying: ${error.message}`);
         }
       } finally {
         checking = false;
