@@ -44,6 +44,8 @@ function App() {
   const [notice, setNotice] = useState('');
   const [notifications, setNotifications] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-notifications') || '[]'); } catch { return []; } });
   const [showActivityCenter, setShowActivityCenter] = useState(false);
+  const [showStartMenu, setShowStartMenu] = useState(false);
+  const [recentApps, setRecentApps] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-recent-apps') || '["messenger","browser"]'); } catch { return ['messenger','browser']; } });
   const [browserUrl, setBrowserUrl] = useState('http://www.internet2008.local/');
   const [browserAddress, setBrowserAddress] = useState('http://www.internet2008.local/');
   const [browserHistory, setBrowserHistory] = useState(['http://www.internet2008.local/']);
@@ -551,6 +553,12 @@ function App() {
   }, [session, activeConversationId, activeApp, selectedFriend, nickname, showNotice]);
 
 
+  const launchApp = (appId) => {
+    setActiveApp(appId); setWindowMinimized(false); setShowStartMenu(false);
+    setRecentApps(prev => [appId, ...prev.filter(id => id !== appId)].slice(0, 4));
+  };
+  useEffect(() => { localStorage.setItem('i2008-recent-apps', JSON.stringify(recentApps)); }, [recentApps]);
+
   const navigateBrowser = (target) => {
     const next = target.trim();
     if (!next) return;
@@ -695,9 +703,11 @@ function App() {
         </section>
       )}
 
+      {showStartMenu && <><button className="start-menu-dismiss" aria-label="Close Start menu" onClick={()=>setShowStartMenu(false)}/><section className="start-menu"><div className="start-menu-banner"><div className="start-menu-avatar">{(nickname||'I').slice(0,1).toUpperCase()}</div><div><b>{nickname||'Internet Guest'}</b><small>{session ? 'Online' : 'Guest session'}</small></div></div><div className="start-menu-body"><div className="start-menu-programs"><small className="start-menu-label">PINNED PROGRAMS</small>{[['messenger',MessageCircle,'Messenger'],['browser',Globe,'Internet Explorer'],['rooms',Users,'Chatrooms'],['random',Search,'Find Stranger'],['friends',Heart,'Buddy List'],['profile',UserRound,'My Profile']].map(([id,Icon,label])=><button key={id} onClick={()=>launchApp(id)}><Icon size={17}/><span>{label}</span></button>)}<div className="start-menu-recent"><small className="start-menu-label">RECENTLY USED</small>{recentApps.slice(0,3).map(id=><button key={id} onClick={()=>launchApp(id)}><Globe size={15}/><span>{{messenger:'Messenger',browser:'Internet Explorer',rooms:'Chatrooms',random:'Find Stranger',friends:'Buddy List',profile:'My Profile'}[id]}</span></button>)}</div></div><div className="start-menu-links"><small className="start-menu-label">SYSTEM</small><button onClick={()=>{setShowStartMenu(false);setShowSettings(true);}}><Settings size={16}/> Control Panel</button><button onClick={()=>{setShowStartMenu(false);setShowActivityCenter(true);}}><Bell size={16}/> Activity Center</button><div className="start-menu-tip">Your little corner of the old internet.</div></div></div><div className="start-menu-footer"><span><span className="tiny-online"/>{connectionLabel}</span><button onClick={()=>{setShowStartMenu(false);if(session)signOut();else showNotice('You are already in guest mode.');}}><LogOut size={15}/> Log Off</button><button onClick={()=>{setShowStartMenu(false);setWindowMinimized(true);setShowActivityCenter(false);showNotice('Session paused. Your desktop is still here.');}}><LogOut size={15}/> Shut Down</button></div></section></>}
+
       {windowMinimized && <button className="restore-window" onClick={() => setWindowMinimized(false)}><MessageCircle size={16}/> {windowTitle}</button>}
 
-      <footer className="taskbar"><button className="start-button" onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><span className="start-orb"><Monitor size={16}/></span><b>Start</b></button><div className="taskbar-divider"/><button className={`taskbar-app ${activeApp==='messenger'?'active':''}`} onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><MessageCircle size={15}/> Messenger</button><button className={`taskbar-app ${activeApp==='random'?'active':''}`} onClick={()=>{setActiveApp('random');setWindowMinimized(false);}}><Search size={15}/> Random Chat</button><div className="taskbar-spacer"/><div className="system-tray"><span className="tray-status"><span className="tiny-online"/>{session?'Online':'Guest'}</span><span>{nowTime()}</span></div></footer>
+      <footer className="taskbar"><button className={`start-button ${showStartMenu ? 'active' : ''}`} onClick={()=>setShowStartMenu(v=>!v)}><span className="start-orb"><Monitor size={16}/></span><b>Start</b></button><div className="taskbar-divider"/><button className={`taskbar-app ${activeApp==='messenger'?'active':''}`} onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><MessageCircle size={15}/> Messenger</button><button className={`taskbar-app ${activeApp==='random'?'active':''}`} onClick={()=>{setActiveApp('random');setWindowMinimized(false);}}><Search size={15}/> Random Chat</button><div className="taskbar-spacer"/><div className="system-tray"><span className="tray-status"><span className="tiny-online"/>{session?'Online':'Guest'}</span><span>{nowTime()}</span></div></footer>
 
       {showSettings && <div className="modal-backdrop" onClick={()=>setShowSettings(false)}><section className="settings-modal" onClick={e=>e.stopPropagation()}><div className="modal-title"><div><Settings size={18}/> Account & settings</div><button className="icon-button" onClick={()=>setShowSettings(false)}><X size={17}/></button></div>
         {session ? <div className="signed-in-card"><div className="avatar">{(nickname||'I')[0]}</div><div><b>{nickname}</b><p>Anonymous chat account</p><small>Session connected</small></div><button className="secondary-button" onClick={signOut}><LogOut size={15}/> Sign out</button></div> : <form className="auth-form" onSubmit={signIn}><h3>Welcome to Internet 2008</h3><p>Enter your name to start chatting. No email or password needed.</p><label>Your name<input maxLength={24} required value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="e.g. dialup_dreamer"/></label><button className="primary-button full" disabled={authBusy}>{authBusy?'Connecting…':'Start chatting'}</button>{authError&&<p className="auth-error">{authError}</p>}</form>}
