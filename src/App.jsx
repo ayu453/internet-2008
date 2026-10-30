@@ -656,6 +656,9 @@ function App() {
             </div>
           </div>
           <div className="menu-bar"><span>File</span><span>Edit</span><span>View</span><span>Tools</span><span>Help</span><span className="menu-right"><Wifi size={12}/> {onlineCount} online</span></div>
+          {activeApp === 'messenger' && <nav className="messenger-nav-tabs" aria-label="Messenger sections">
+            {[['home','Messenger',MessageCircle],['friends','Buddy List',Users],['random','Find Stranger',Search],['rooms','Chatrooms',Globe],['profile','My Profile',UserRound]].map(([id,label,Icon])=><button key={id} className={messengerView===id?'active':''} onClick={()=>setMessengerView(id)}><Icon size={14}/>{label}</button>)}
+          </nav>}
 
           {activeApp === 'browser' && <div className="browser-shell">
             <div className="browser-toolbar"><button title="Back" disabled={browserIndex===0} onClick={()=>moveBrowser(-1)}><ArrowLeft size={16}/></button><button title="Forward" disabled={browserIndex>=browserHistory.length-1} onClick={()=>moveBrowser(1)}><ArrowRight size={16}/></button><button title="Home" onClick={()=>navigateBrowser('http://www.internet2008.local/')}><Home size={15}/></button><form onSubmit={e=>{e.preventDefault();navigateBrowser(browserAddress.startsWith('http')?browserAddress:`http://${browserAddress}`);}}><span><LockKeyhole size={12}/></span><input aria-label="Address" value={browserAddress} onChange={e=>setBrowserAddress(e.target.value)}/><button type="submit">Go</button></form><button title="Add to Favorites" onClick={()=>setBrowserBookmarks(prev=>prev.some(b=>b.url===browserUrl)?prev:[...prev,{url:browserUrl,title:browserUrl.replace('http://','')}])}><Star size={15}/></button></div>
