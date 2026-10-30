@@ -45,6 +45,10 @@ function App() {
   const [notifications, setNotifications] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-notifications') || '[]'); } catch { return []; } });
   const [showActivityCenter, setShowActivityCenter] = useState(false);
   const [showStartMenu, setShowStartMenu] = useState(false);
+  const [showGadgetPicker, setShowGadgetPicker] = useState(false);
+  const [visibleGadgets, setVisibleGadgets] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-gadgets-visible') || '[\"clock\",\"calendar\",\"notes\",\"feed\"]'); } catch { return ['clock','calendar','notes','feed']; } });
+  const [gadgetPositions, setGadgetPositions] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-gadgets-positions') || '{}'); } catch { return {}; } });
+  const [stickyNote, setStickyNote] = useState(() => localStorage.getItem('i2008-sticky-note') || 'Remember the good old days…');
   const [recentApps, setRecentApps] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-recent-apps') || '["messenger","browser"]'); } catch { return ['messenger','browser']; } });
   const [browserUrl, setBrowserUrl] = useState('http://www.internet2008.local/');
   const [browserAddress, setBrowserAddress] = useState('http://www.internet2008.local/');
@@ -558,6 +562,11 @@ function App() {
     setRecentApps(prev => [appId, ...prev.filter(id => id !== appId)].slice(0, 4));
   };
   useEffect(() => { localStorage.setItem('i2008-recent-apps', JSON.stringify(recentApps)); }, [recentApps]);
+  useEffect(() => { localStorage.setItem('i2008-gadgets-visible', JSON.stringify(visibleGadgets)); }, [visibleGadgets]);
+  useEffect(() => { localStorage.setItem('i2008-gadgets-positions', JSON.stringify(gadgetPositions)); }, [gadgetPositions]);
+  useEffect(() => { localStorage.setItem('i2008-sticky-note', stickyNote); }, [stickyNote]);
+  const moveGadget = (id, event) => { const bounds = event.currentTarget.parentElement.getBoundingClientRect(); setGadgetPositions(prev => ({ ...prev, [id]: { x: Math.max(8, Math.min(event.clientX - bounds.left - 75, bounds.width - 170)), y: Math.max(72, Math.min(event.clientY - bounds.top - 18, bounds.height - 190)) } })); };
+  const gadgetStyle = (id, fallbackTop) => ({ left: gadgetPositions[id]?.x ?? undefined, top: gadgetPositions[id]?.y ?? fallbackTop, right: gadgetPositions[id]?.x == null ? 22 : undefined });
 
   const navigateBrowser = (target) => {
     const next = target.trim();
@@ -596,6 +605,14 @@ function App() {
 
       {showActivityCenter && <section className="activity-center"><div className="activity-head"><div><b>Activity Center</b><small>Your Internet 2008 system log</small></div><button className="icon-button" onClick={() => setShowActivityCenter(false)} aria-label="Close activity center"><X size={15}/></button></div><div className="activity-tools"><span>{notifications.filter(n => !n.read).length} unread</span><button onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}>Mark all read</button><button onClick={() => setNotifications([])}>Clear all</button></div><div className="activity-list">{notifications.length ? notifications.map(item => <article key={item.id} className={`activity-item ${item.read ? '' : 'unread-item'}`}><span className="activity-icon"><Bell size={14}/></span><div><p>{item.message}</p><time>{new Date(item.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time></div><button aria-label="Mark notification read" onClick={() => setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n))}>✓</button></article>) : <div className="activity-empty"><Bell size={25}/><b>All quiet on the internet.</b><span>System activity will show up here.</span></div>}</div></section>}
 
+      <div className="desktop-gadget-toolbar"><button onClick={()=>setShowGadgetPicker(v=>!v)}><Sparkles size={14}/> Desktop Gadgets</button></div>
+      {showGadgetPicker && <section className="gadget-picker"><div><b>Desktop Gadgets</b><button onClick={()=>setShowGadgetPicker(false)} aria-label="Close gadgets"><X size={14}/></button></div>{[['clock','Analog Clock'],['calendar','Calendar'],['notes','Sticky Notes'],['feed','Internet Feed']].map(([id,label])=><button key={id} onClick={()=>setVisibleGadgets(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id])}><span>{visibleGadgets.includes(id)?'✓':'＋'}</span>{label}</button>)}</section>}
+      <section className="desktop-gadgets" aria-label="Desktop gadgets">
+        {visibleGadgets.includes('clock') && <article className="desktop-gadget clock-gadget" style={gadgetStyle('clock',92)} draggable onDragEnd={e=>moveGadget('clock',e)}><div className="gadget-grip"><span>GADGET</span><button title="Hide clock" onClick={()=>setVisibleGadgets(p=>p.filter(x=>x!=='clock'))}>×</button></div><div className="analog-clock"><div className="clock-hand hour-hand"/><div className="clock-hand minute-hand"/><i/></div><b>{nowTime()}</b><small>LOCAL TIME</small></article>}
+        {visibleGadgets.includes('calendar') && <article className="desktop-gadget calendar-gadget" style={gadgetStyle('calendar',285)} draggable onDragEnd={e=>moveGadget('calendar',e)}><div className="gadget-grip"><span>CALENDAR</span><button title="Hide calendar" onClick={()=>setVisibleGadgets(p=>p.filter(x=>x!=='calendar'))}>×</button></div><div className="calendar-month">{new Date().toLocaleDateString([], {month:'long',year:'numeric'})}</div><div className="calendar-date">{new Date().getDate()}</div><small>{new Date().toLocaleDateString([], {weekday:'long'})}</small></article>}
+        {visibleGadgets.includes('notes') && <article className="desktop-gadget notes-gadget" style={gadgetStyle('notes',478)} draggable onDragEnd={e=>moveGadget('notes',e)}><div className="gadget-grip"><span>STICKY NOTES</span><button title="Hide notes" onClick={()=>setVisibleGadgets(p=>p.filter(x=>x!=='notes'))}>×</button></div><textarea draggable={false} value={stickyNote} onChange={e=>setStickyNote(e.target.value)} placeholder="Write a little reminder…"/></article>}
+        {visibleGadgets.includes('feed') && <article className="desktop-gadget feed-gadget" style={gadgetStyle('feed',650)} draggable onDragEnd={e=>moveGadget('feed',e)}><div className="gadget-grip"><span>INTERNET FEED</span><button title="Hide feed" onClick={()=>setVisibleGadgets(p=>p.filter(x=>x!=='feed'))}>×</button></div><div className="feed-line">✦ Welcome back to 2008</div><div className="feed-line">♫ Your friends are just a click away</div><div className="feed-line">⌁ The internet never sleeps…</div></article>}
+      </section>
       <section className="desktop-icons">
         <button className="desktop-icon" onClick={() => { setActiveApp('messenger'); setWindowMinimized(false); }}><span className="app-icon messenger-icon"><MessageCircle/></span><span>Messenger</span></button>
         <button className="desktop-icon" onClick={() => { setActiveApp('rooms'); setWindowMinimized(false); }}><span className="app-icon rooms-icon"><Globe/></span><span>Chatrooms</span></button>
