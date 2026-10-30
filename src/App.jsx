@@ -3,7 +3,7 @@ import {
   Monitor, MessageCircle, Users, UserRound, Search, Settings, Minus, Square,
   X, Smile, Send, Volume2, VolumeX, Radio, ShieldAlert, UserPlus, LogOut,
   RefreshCw, Wifi, WifiOff, ChevronRight, Globe, Gamepad2, Moon, Heart,
-  Bell, UserCheck, UserMinus, Copy, LockKeyhole, Sparkles, Terminal, Coffee
+  Bell, UserCheck, UserMinus, Copy, LockKeyhole, Sparkles, Terminal, Coffee, ArrowLeft, ArrowRight, Home, Star, ExternalLink
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
 
@@ -44,6 +44,12 @@ function App() {
   const [notice, setNotice] = useState('');
   const [notifications, setNotifications] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-notifications') || '[]'); } catch { return []; } });
   const [showActivityCenter, setShowActivityCenter] = useState(false);
+  const [browserUrl, setBrowserUrl] = useState('http://www.internet2008.local/');
+  const [browserAddress, setBrowserAddress] = useState('http://www.internet2008.local/');
+  const [browserHistory, setBrowserHistory] = useState(['http://www.internet2008.local/']);
+  const [browserIndex, setBrowserIndex] = useState(0);
+  const [browserBookmarks, setBrowserBookmarks] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-browser-bookmarks') || '[]'); } catch { return []; } });
+  const [browserSearch, setBrowserSearch] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [randomState, setRandomState] = useState('idle');
   const [randomPartner, setRandomPartner] = useState(null);
@@ -545,12 +551,26 @@ function App() {
   }, [session, activeConversationId, activeApp, selectedFriend, nickname, showNotice]);
 
 
+  const navigateBrowser = (target) => {
+    const next = target.trim();
+    if (!next) return;
+    setBrowserUrl(next); setBrowserAddress(next);
+    setBrowserHistory(prev => [...prev.slice(0, browserIndex + 1), next]);
+    setBrowserIndex(prev => prev + 1);
+  };
+  const moveBrowser = (delta) => {
+    const nextIndex = browserIndex + delta;
+    if (nextIndex < 0 || nextIndex >= browserHistory.length) return;
+    setBrowserIndex(nextIndex); setBrowserUrl(browserHistory[nextIndex]); setBrowserAddress(browserHistory[nextIndex]);
+  };
+  useEffect(() => { localStorage.setItem('i2008-browser-bookmarks', JSON.stringify(browserBookmarks)); }, [browserBookmarks]);
+
   const currentRoom = ROOMS.find(r => r.id === activeRoom) || ROOMS[0];
   const windowTitle = activeApp === 'messenger' ? 'Internet Messenger' :
     activeApp === 'random' ? 'Random Stranger Chat' :
     activeApp === 'rooms' ? 'Chatrooms' :
     activeApp === 'friends' ? 'Buddy List' :
-    activeApp === 'profile' ? 'My Profile' : 'Internet 2008';
+    activeApp === 'profile' ? 'My Profile' : activeApp === 'browser' ? 'Internet Explorer' : 'Internet 2008';
 
   return (
     <main className="desktop">
@@ -574,6 +594,7 @@ function App() {
         <button className="desktop-icon" onClick={() => { setActiveApp('random'); setWindowMinimized(false); }}><span className="app-icon random-icon"><Search/></span><span>Find Stranger</span></button>
         <button className="desktop-icon" onClick={() => { setActiveApp('friends'); setWindowMinimized(false); }}><span className="app-icon friends-icon"><Users/></span><span>Buddy List</span></button>
         <button className="desktop-icon" onClick={() => { setActiveApp('profile'); setWindowMinimized(false); }}><span className="app-icon profile-icon"><UserRound/></span><span>My Profile</span></button>
+        <button className="desktop-icon" onClick={() => { setActiveApp('browser'); setWindowMinimized(false); }}><span className="app-icon browser-icon"><Globe/></span><span>Internet Explorer</span></button>
         <button className="desktop-icon" onClick={() => showNotice('Mystery file #001: “Someone is still online… even when the café is closed.” More clues coming soon.')}><span className="app-icon file-icon"><Terminal/></span><span>secret.txt</span></button>
       </section>
 
@@ -588,6 +609,14 @@ function App() {
             </div>
           </div>
           <div className="menu-bar"><span>File</span><span>Edit</span><span>View</span><span>Tools</span><span>Help</span><span className="menu-right"><Wifi size={12}/> {onlineCount} online</span></div>
+
+          {activeApp === 'browser' && <div className="browser-shell">
+            <div className="browser-toolbar"><button title="Back" disabled={browserIndex===0} onClick={()=>moveBrowser(-1)}><ArrowLeft size={16}/></button><button title="Forward" disabled={browserIndex>=browserHistory.length-1} onClick={()=>moveBrowser(1)}><ArrowRight size={16}/></button><button title="Home" onClick={()=>navigateBrowser('http://www.internet2008.local/')}><Home size={15}/></button><form onSubmit={e=>{e.preventDefault();navigateBrowser(browserAddress.startsWith('http')?browserAddress:`http://${browserAddress}`);}}><span><LockKeyhole size={12}/></span><input aria-label="Address" value={browserAddress} onChange={e=>setBrowserAddress(e.target.value)}/><button type="submit">Go</button></form><button title="Add to Favorites" onClick={()=>setBrowserBookmarks(prev=>prev.some(b=>b.url===browserUrl)?prev:[...prev,{url:browserUrl,title:browserUrl.replace('http://','')}])}><Star size={15}/></button></div>
+            <div className="browser-favorites"><b>Favorites</b>{browserBookmarks.map(b=><button key={b.url} onClick={()=>navigateBrowser(b.url)}>{b.title}</button>)}</div>
+            <div className="browser-page">
+              {browserUrl==='http://www.internet2008.local/' || browserUrl==='http://www.internet2008.local' ? <div className="ie-home"><div className="ie-logo"><Globe size={34}/><div><b>the internet</b><small>it's a big place. explore it.</small></div></div><form className="ie-search" onSubmit={e=>{e.preventDefault();navigateBrowser(`http://search.internet2008.local/?q=${encodeURIComponent(browserSearch.trim())}`);}}><input value={browserSearch} onChange={e=>setBrowserSearch(e.target.value)} placeholder="Search the web…"/><button>Search</button></form><div className="ie-columns"><section><h3>What's happening online</h3><button onClick={()=>navigateBrowser('http://social.internet2008.local/')}>✉ MySpace-ish Social Network <small>Connect with your friends</small></button><button onClick={()=>navigateBrowser('http://music.internet2008.local/')}>♫ MP3 Music Corner <small>Discover the sounds of 2008</small></button><button onClick={()=>navigateBrowser('http://games.internet2008.local/')}>▣ Flash Game Arcade <small>One more game before dinner</small></button></section><section><h3>Internet 2008 links</h3><p>Welcome to your little corner of the web. No feeds, no algorithms — just websites.</p><div className="ie-stamp">BEST VIEWED AT 1024 × 768</div></section></div></div> : browserUrl.startsWith('http://search.internet2008.local/') ? <div className="ie-content"><h2>Search results</h2><p>Showing results for <b>{decodeURIComponent(browserUrl.split('q=')[1]||'').replace(/\+/g,' ')}</b></p>{[['Social Network','http://social.internet2008.local/'],['Music Corner','http://music.internet2008.local/'],['Flash Game Arcade','http://games.internet2008.local/']].map(([name,url])=><article><a onClick={()=>navigateBrowser(url)}>{name}</a><p>A little piece of the 2008 internet.</p></article>)}</div> : <div className="ie-content"><div className="ie-site-head"><span>INTERNET 2008 NETWORK</span><small>{browserUrl}</small></div>{browserUrl.includes('social.internet2008.local') ? <><h2>Friends Space</h2><p>Your people. Your profile. Your corner of the web.</p><button onClick={()=>{setActiveApp('friends');}}>Open Buddy List</button><button onClick={()=>{setActiveApp('profile');}}>Edit your profile</button></> : browserUrl.includes('music.internet2008.local') ? <><h2>MP3 Music Corner</h2><p>Now playing in your imagination: the summer of 2008.</p><div className="ie-feature">♫ Featured playlist<br/><b>Dial-up Dreams · 2008 Mix</b><small>Music discovery demo — audio streaming isn't connected yet.</small></div></> : browserUrl.includes('games.internet2008.local') ? <><h2>Flash Game Arcade</h2><p>Take a break and play something.</p><div className="ie-feature">▣ The Loading Game<br/><b>Coming soon to the arcade</b><small>Classic browser games will live here.</small></div></> : <><h2>Hmm… Internet Explorer cannot display this page.</h2><p>This address isn't part of the Internet 2008 world yet.</p><button onClick={()=>navigateBrowser('http://www.internet2008.local/')}>Go to homepage</button></>}</div>}
+            </div><div className="browser-status"><span><span className="tiny-online"/> Done</span><span>Internet Explorer 7 · Internet 2008</span></div>
+          </div>}
 
           {activeApp === 'messenger' && (
             <div className="messenger-layout">
