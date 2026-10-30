@@ -46,3 +46,11 @@
 .desktop-context-separator{height:1px;margin:4px 3px;background:#bdcbd9;border-bottom:1px solid #fff}
 .desktop-icons.icons-arranged{display:flex;flex-direction:column;align-items:flex-start;gap:5px}
 .desktop-icons.icons-arranged .desktop-icon{min-height:65px}
+
+
+/* Unified Windows Live Messenger navigation */
+.messenger-nav-tabs{display:flex;align-items:center;gap:3px;flex-shrink:0;padding:5px 9px;background:linear-gradient(#f7fbff,#e7eff7);border-bottom:1px solid #cbd9e6;overflow-x:auto}
+.messenger-nav-tabs button{display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;padding:7px 10px;border:1px solid transparent;border-radius:4px;background:transparent;color:#536f88;font:10px Tahoma,Arial,sans-serif;cursor:pointer}
+.messenger-nav-tabs button:hover{background:#fff;border-color:#cbddeb}
+.messenger-nav-tabs button.active{background:linear-gradient(#fff,#e6f2fc);border-color:#a9c8df;color:#176da7;box-shadow:inset 0 1px #fff}
+@media(max-width:520px){.messenger-nav-tabs{padding:4px 5px;gap:1px}.messenger-nav-tabs button{padding:7px 8px;font-size:9px;gap:4px}.messenger-nav-tabs button svg{width:12px;height:12px}}
