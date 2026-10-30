@@ -24,6 +24,7 @@ function App() {
   const [draftName, setDraftName] = useState('');
   const [guestMode, setGuestMode] = useState(false);
   const [activeApp, setActiveApp] = useState('messenger');
+  const [messengerView, setMessengerView] = useState('home');
   const [activeRoom, setActiveRoom] = useState('cafe');
   const [windowMinimized, setWindowMinimized] = useState(false);
   const [windowMaximized, setWindowMaximized] = useState(false);
@@ -574,8 +575,11 @@ function App() {
   };
 
   const launchApp = (appId) => {
-    setActiveApp(appId); setWindowMinimized(false); setShowStartMenu(false);
-    setRecentApps(prev => [appId, ...prev.filter(id => id !== appId)].slice(0, 4));
+    if (['rooms','random','friends','profile'].includes(appId)) { setActiveApp('messenger'); setMessengerView(appId); }
+    else { setActiveApp(appId); }
+    setWindowMinimized(false); setShowStartMenu(false);
+    const recentId = ['rooms','random','friends','profile'].includes(appId) ? 'messenger' : appId;
+    setRecentApps(prev => [recentId, ...prev.filter(id => id !== recentId)].slice(0, 4));
   };
   useEffect(() => { localStorage.setItem('i2008-recent-apps', JSON.stringify(recentApps)); }, [recentApps]);
   useEffect(() => { localStorage.setItem('i2008-gadgets-visible', JSON.stringify(visibleGadgets)); }, [visibleGadgets]);
@@ -599,11 +603,7 @@ function App() {
   useEffect(() => { localStorage.setItem('i2008-browser-bookmarks', JSON.stringify(browserBookmarks)); }, [browserBookmarks]);
 
   const currentRoom = ROOMS.find(r => r.id === activeRoom) || ROOMS[0];
-  const windowTitle = activeApp === 'messenger' ? 'Internet Messenger' :
-    activeApp === 'random' ? 'Random Stranger Chat' :
-    activeApp === 'rooms' ? 'Chatrooms' :
-    activeApp === 'friends' ? 'Buddy List' :
-    activeApp === 'profile' ? 'My Profile' : activeApp === 'browser' ? 'Internet Explorer' : 'Internet 2008';
+  const windowTitle = activeApp === 'browser' ? 'Internet Explorer' : 'Windows Live Messenger';
 
   return (
     <main className="desktop" onContextMenu={openDesktopContext} onClick={(event) => { if (desktopContext && !event.target.closest(".desktop-context-menu")) setDesktopContext(null); }}>
@@ -641,10 +641,6 @@ function App() {
       </section>}
       <section className={`desktop-icons ${iconsArranged ? 'icons-arranged' : ''}`}>
         <button className="desktop-icon" onClick={() => { setActiveApp('messenger'); setWindowMinimized(false); }}><span className="app-icon messenger-icon"><MessageCircle/></span><span>Messenger</span></button>
-        <button className="desktop-icon" onClick={() => { setActiveApp('rooms'); setWindowMinimized(false); }}><span className="app-icon rooms-icon"><Globe/></span><span>Chatrooms</span></button>
-        <button className="desktop-icon" onClick={() => { setActiveApp('random'); setWindowMinimized(false); }}><span className="app-icon random-icon"><Search/></span><span>Find Stranger</span></button>
-        <button className="desktop-icon" onClick={() => { setActiveApp('friends'); setWindowMinimized(false); }}><span className="app-icon friends-icon"><Users/></span><span>Buddy List</span></button>
-        <button className="desktop-icon" onClick={() => { setActiveApp('profile'); setWindowMinimized(false); }}><span className="app-icon profile-icon"><UserRound/></span><span>My Profile</span></button>
         <button className="desktop-icon" onClick={() => { setActiveApp('browser'); setWindowMinimized(false); }}><span className="app-icon browser-icon"><Globe/></span><span>Internet Explorer</span></button>
         <button className="desktop-icon" onClick={() => showNotice('Mystery file #001: “Someone is still online… even when the café is closed.” More clues coming soon.')}><span className="app-icon file-icon"><Terminal/></span><span>secret.txt</span></button>
       </section>
@@ -669,7 +665,7 @@ function App() {
             </div><div className="browser-status"><span><span className="tiny-online"/> Done</span><span>Internet Explorer 7 · Internet 2008</span></div>
           </div>}
 
-          {activeApp === 'messenger' && (
+          {activeApp === 'messenger' && messengerView === 'home' && (
             <div className="messenger-layout">
               <aside className="sidebar">
                 <div className="profile-card">
@@ -687,8 +683,10 @@ function App() {
                   </button>;
                 })}
                 <div className="sidebar-heading">YOUR SHORTCUTS</div>
-                <button className="nav-row" onClick={() => setActiveApp('random')}><Search size={16}/> Random stranger <ChevronRight size={14}/></button>
-                <button className="nav-row" onClick={() => setActiveApp('friends')}><Users size={16}/> Buddy list <ChevronRight size={14}/></button>
+                <button className="nav-row" onClick={() => setMessengerView('random')}><Search size={16}/> Find a stranger <ChevronRight size={14}/></button>
+                <button className="nav-row" onClick={() => setMessengerView('friends')}><Users size={16}/> Buddy list <ChevronRight size={14}/></button>
+                <button className="nav-row" onClick={() => setMessengerView('profile')}><UserRound size={16}/> My profile <ChevronRight size={14}/></button>
+                <button className="nav-row" onClick={() => setMessengerView('rooms')}><Globe size={16}/> Chatrooms <ChevronRight size={14}/></button>
                 <div className="sidebar-bottom"><span className="tiny-online"/>{onlineCount} friend{onlineCount === 1 ? '' : 's'} online <span className="demo-pill">{isSupabaseConfigured ? 'LIVE' : 'DEMO'}</span></div>
               </aside>
               <section className="chat-panel">
@@ -715,9 +713,9 @@ function App() {
             </div>
           )}
 
-          {activeApp === 'rooms' && <div className="page-panel"><div className="page-title"><Globe/><div><h2>Public chatrooms</h2><p>Find your corner of the old internet.</p></div></div><div className="room-grid">{ROOMS.map(room => { const Icon = room.icon; return <button key={room.id} className="room-card" onClick={() => { setActiveRoom(room.id); setActiveApp('messenger'); }}><span className="room-symbol large" style={{background:room.color}}><Icon/></span><h3>{room.name}</h3><p>{room.description}</p><span className="room-card-bottom"><span className="tiny-online"/> Join room <ChevronRight size={14}/></span></button>; })}</div><p className="page-footnote">Public rooms are visible to signed-in users with access. Keep personal details private.</p></div>}
+          {activeApp === 'messenger' && messengerView === 'rooms' && <div className="page-panel"><div className="page-title"><Globe/><div><h2>Public chatrooms</h2><p>Find your corner of the old internet.</p></div></div><div className="room-grid">{ROOMS.map(room => { const Icon = room.icon; return <button key={room.id} className="room-card" onClick={() => { setActiveRoom(room.id); setActiveApp('messenger'); }}><span className="room-symbol large" style={{background:room.color}}><Icon/></span><h3>{room.name}</h3><p>{room.description}</p><span className="room-card-bottom"><span className="tiny-online"/> Join room <ChevronRight size={14}/></span></button>; })}</div><p className="page-footnote">Public rooms are visible to signed-in users with access. Keep personal details private.</p></div>}
 
-          {activeApp === 'random' && <div className="page-panel random-page"><div className="page-title"><Search/><div><h2>Random stranger chat</h2><p>Meet someone you haven’t met before.</p></div></div>
+          {activeApp === 'messenger' && messengerView === 'random' && <div className="page-panel random-page"><div className="page-title"><Search/><div><h2>Random stranger chat</h2><p>Meet someone you haven’t met before.</p></div></div>
             <div className="random-card"><div className="random-orbit"><div className="orbit-dot dot-a"/><div className="orbit-dot dot-b"/><div className="orbit-dot dot-c"/><div className="orbit-center"><MessageCircle size={34}/></div></div>
               {randomState === 'idle' && <><h3>Somewhere, someone is online.</h3><p>Say hello to a random person. You can leave or report at any time.</p><button className="primary-button" onClick={startRandomChat}><Search size={16}/> Find someone</button></>}
               {randomState === 'searching' && <><h3>Looking for someone…</h3><p>Waiting for another available, signed-in person.</p><div className="loading-dots"><i/><i/><i/></div><button className="secondary-button" onClick={cancelRandomChat}>Cancel search</button></>}
@@ -726,7 +724,7 @@ function App() {
             </div><div className="safety-note"><LockKeyhole size={16}/><span><b>Your safety matters.</b> Don’t share passwords, address, phone number or payment details. Block/report features should be enabled before public launch.</span></div>
           </div>}
 
-          {activeApp === 'friends' && <div className="page-panel"><div className="page-title"><Users/><div><h2>Buddy list</h2><p>Your internet friends, wherever they are.</p></div></div>
+          {activeApp === 'messenger' && messengerView === 'friends' && <div className="page-panel"><div className="page-title"><Users/><div><h2>Buddy list</h2><p>Your internet friends, wherever they are.</p></div></div>
             {selectedFriend && activeConversationId ? <section className="friend-dm-panel"><div className="friend-dm-header"><button className="secondary-button" onClick={() => { setSelectedFriend(null); setActiveConversationId(null); setInput(''); }}><ChevronRight size={15}/> Back to buddies</button><div className="friend-dm-person"><div className="avatar small">{(selectedFriend.display_name||'?')[0]}</div><div><b>{selectedFriend.display_name}</b><small>Private conversation</small></div></div></div><div className="friend-dm-transcript">{(dmMessages[activeConversationId] || []).map(m => <article className={`message ${m.mine ? 'mine' : ''}`} key={m.id}><div className="message-avatar">{(m.name||'?').slice(0,1).toUpperCase()}</div><div className="message-content"><div className="message-meta"><b>{m.name}{m.mine ? ' (you)' : ''}</b><time>{m.time}</time></div><div className="message-bubble">{m.body}</div></div></article>)}{!(dmMessages[activeConversationId] || []).length && <div className="empty-state"><MessageCircle size={28}/><h3>Say hello!</h3><p>This is a private conversation between you and {selectedFriend.display_name}.</p></div>}<div ref={endRef}/></div><form className="composer" onSubmit={sendFriendMessage}><div className="composer-tools"><span>Private message to {selectedFriend.display_name}</span><span className="char-count">{input.length}/1000</span></div><div className="composer-bottom"><textarea value={input} maxLength={1000} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendFriendMessage(e);}}} placeholder="Write a private message… (Enter to send)" rows={2}/><button className="send-button" type="submit" disabled={!input.trim()}><Send size={17}/><span>Send</span></button></div></form></section> : <>
             {!session && <div className="inline-warning"><LockKeyhole size={18}/><div><b>Permanent friends need an account.</b><p>Guest mode only saves this session locally.</p></div><button className="secondary-button" onClick={()=>setShowSettings(true)}>Sign in</button></div>}
             <form className="friend-add" onSubmit={e=>{e.preventDefault();if(friendSearchResults.length===1)sendFriendRequestTo(friendSearchResults[0]);else showNotice(friendSearchResults.length>1 ? "Choose the correct profile from the search results below." : "Wait for profile search results, then choose a friend.");}}><input value={friendSearch} onChange={e=>setFriendSearch(e.target.value)} placeholder="Search by display name or profile ID"/><button className="primary-button" disabled={!session || friendSearchBusy || friendSearchLoading || friendSearchResults.length!==1}><UserPlus size={15}/> Add friend</button></form>
@@ -740,17 +738,17 @@ function App() {
             </>}
           </div>}
 
-          {activeApp === 'profile' && <div className="page-panel profile-page"><div className="page-title"><UserRound/><div><h2>My profile</h2><p>Your little corner of the internet.</p></div></div><div className="profile-edit-card"><div className="avatar big">{(nickname||'I')[0].toUpperCase()}</div><label>Display name<input maxLength={24} value={nickname} onChange={e=>setNickname(e.target.value)}/></label><label>What are you up to?<input maxLength={80} value={statusText} onChange={e=>setStatusText(e.target.value)}/></label><label>Availability<select value={status} onChange={e=>setStatus(e.target.value)}><option>Available</option><option>Away</option><option>Busy</option><option>Invisible</option></select></label><button className="primary-button" onClick={async()=>{localStorage.setItem('i2008-nickname',nickname);if(session){const {error}=await supabase.from('profiles').update({display_name:nickname,mood:statusText}).eq('id',session.user.id);if(error)return showNotice(error.message);}showNotice('Profile updated.');}}><UserCheck size={16}/> Save profile</button></div></div>}
+          {activeApp === 'messenger' && messengerView === 'profile' && <div className="page-panel profile-page"><div className="page-title"><UserRound/><div><h2>My profile</h2><p>Your little corner of the internet.</p></div></div><div className="profile-edit-card"><div className="avatar big">{(nickname||'I')[0].toUpperCase()}</div><label>Display name<input maxLength={24} value={nickname} onChange={e=>setNickname(e.target.value)}/></label><label>What are you up to?<input maxLength={80} value={statusText} onChange={e=>setStatusText(e.target.value)}/></label><label>Availability<select value={status} onChange={e=>setStatus(e.target.value)}><option>Available</option><option>Away</option><option>Busy</option><option>Invisible</option></select></label><button className="primary-button" onClick={async()=>{localStorage.setItem('i2008-nickname',nickname);if(session){const {error}=await supabase.from('profiles').update({display_name:nickname,mood:statusText}).eq('id',session.user.id);if(error)return showNotice(error.message);}showNotice('Profile updated.');}}><UserCheck size={16}/> Save profile</button></div></div>}
 
           <div className="statusbar"><span><span className="tiny-online"/> Ready</span><span>{session ? `Signed in: ${nickname}` : 'Guest session'}</span><span>Internet 2008 v1.0</span></div>
         </section>
       )}
 
-      {showStartMenu && <><button className="start-menu-dismiss" aria-label="Close Start menu" onClick={()=>setShowStartMenu(false)}/><section className="start-menu"><div className="start-menu-banner"><div className="start-menu-avatar">{(nickname||'I').slice(0,1).toUpperCase()}</div><div><b>{nickname||'Internet Guest'}</b><small>{session ? 'Online' : 'Guest session'}</small></div></div><div className="start-menu-body"><div className="start-menu-programs"><small className="start-menu-label">PINNED PROGRAMS</small>{[['messenger',MessageCircle,'Messenger'],['browser',Globe,'Internet Explorer'],['rooms',Users,'Chatrooms'],['random',Search,'Find Stranger'],['friends',Heart,'Buddy List'],['profile',UserRound,'My Profile']].map(([id,Icon,label])=><button key={id} onClick={()=>launchApp(id)}><Icon size={17}/><span>{label}</span></button>)}<div className="start-menu-recent"><small className="start-menu-label">RECENTLY USED</small>{recentApps.slice(0,3).map(id=><button key={id} onClick={()=>launchApp(id)}><Globe size={15}/><span>{{messenger:'Messenger',browser:'Internet Explorer',rooms:'Chatrooms',random:'Find Stranger',friends:'Buddy List',profile:'My Profile'}[id]}</span></button>)}</div></div><div className="start-menu-links"><small className="start-menu-label">SYSTEM</small><button onClick={()=>{setShowStartMenu(false);setShowSettings(true);}}><Settings size={16}/> Control Panel</button><button onClick={()=>{setShowStartMenu(false);setShowActivityCenter(true);}}><Bell size={16}/> Activity Center</button><div className="start-menu-tip">Your little corner of the old internet.</div></div></div><div className="start-menu-footer"><span><span className="tiny-online"/>{connectionLabel}</span><button onClick={()=>{setShowStartMenu(false);if(session)signOut();else showNotice('You are already in guest mode.');}}><LogOut size={15}/> Log Off</button><button onClick={()=>{setShowStartMenu(false);setWindowMinimized(true);setShowActivityCenter(false);showNotice('Session paused. Your desktop is still here.');}}><LogOut size={15}/> Shut Down</button></div></section></>}
+      {showStartMenu && <><button className="start-menu-dismiss" aria-label="Close Start menu" onClick={()=>setShowStartMenu(false)}/><section className="start-menu"><div className="start-menu-banner"><div className="start-menu-avatar">{(nickname||'I').slice(0,1).toUpperCase()}</div><div><b>{nickname||'Internet Guest'}</b><small>{session ? 'Online' : 'Guest session'}</small></div></div><div className="start-menu-body"><div className="start-menu-programs"><small className="start-menu-label">PINNED PROGRAMS</small>{[['messenger',MessageCircle,'Messenger'],['browser',Globe,'Internet Explorer']].map(([id,Icon,label])=><button key={id} onClick={()=>launchApp(id)}><Icon size={17}/><span>{label}</span></button>)}<div className="start-menu-recent"><small className="start-menu-label">RECENTLY USED</small>{recentApps.slice(0,3).map(id=><button key={id} onClick={()=>launchApp(id)}><Globe size={15}/><span>{{messenger:'Messenger',browser:'Internet Explorer'}[id]}</span></button>)}</div></div><div className="start-menu-links"><small className="start-menu-label">SYSTEM</small><button onClick={()=>{setShowStartMenu(false);setShowSettings(true);}}><Settings size={16}/> Control Panel</button><button onClick={()=>{setShowStartMenu(false);setShowActivityCenter(true);}}><Bell size={16}/> Activity Center</button><div className="start-menu-tip">Your little corner of the old internet.</div></div></div><div className="start-menu-footer"><span><span className="tiny-online"/>{connectionLabel}</span><button onClick={()=>{setShowStartMenu(false);if(session)signOut();else showNotice('You are already in guest mode.');}}><LogOut size={15}/> Log Off</button><button onClick={()=>{setShowStartMenu(false);setWindowMinimized(true);setShowActivityCenter(false);showNotice('Session paused. Your desktop is still here.');}}><LogOut size={15}/> Shut Down</button></div></section></>}
 
       {windowMinimized && <button className="restore-window" onClick={() => setWindowMinimized(false)}><MessageCircle size={16}/> {windowTitle}</button>}
 
-      <footer className="taskbar"><button className={`start-button ${showStartMenu ? 'active' : ''}`} onClick={()=>setShowStartMenu(v=>!v)}><span className="start-orb"><Monitor size={16}/></span><b>Start</b></button><div className="taskbar-divider"/><button className={`taskbar-app ${activeApp==='messenger'?'active':''}`} onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><MessageCircle size={15}/> Messenger</button><button className={`taskbar-app ${activeApp==='random'?'active':''}`} onClick={()=>{setActiveApp('random');setWindowMinimized(false);}}><Search size={15}/> Random Chat</button><div className="taskbar-spacer"/><div className="system-tray"><span className="tray-status"><span className="tiny-online"/>{session?'Online':'Guest'}</span><span>{nowTime()}</span></div></footer>
+      <footer className="taskbar"><button className={`start-button ${showStartMenu ? 'active' : ''}`} onClick={()=>setShowStartMenu(v=>!v)}><span className="start-orb"><Monitor size={16}/></span><b>Start</b></button><div className="taskbar-divider"/><button className={`taskbar-app ${activeApp==='messenger'?'active':''}`} onClick={()=>{setActiveApp('messenger');setWindowMinimized(false);}}><MessageCircle size={15}/> Messenger</button><div className="taskbar-spacer"/><div className="system-tray"><span className="tray-status"><span className="tiny-online"/>{session?'Online':'Guest'}</span><span>{nowTime()}</span></div></footer>
 
       {showSettings && <div className="modal-backdrop" onClick={()=>setShowSettings(false)}><section className="settings-modal" onClick={e=>e.stopPropagation()}><div className="modal-title"><div><Settings size={18}/> Account & settings</div><button className="icon-button" onClick={()=>setShowSettings(false)}><X size={17}/></button></div>
         {session ? <div className="signed-in-card"><div className="avatar">{(nickname||'I')[0]}</div><div><b>{nickname}</b><p>Anonymous chat account</p><small>Session connected</small></div><button className="secondary-button" onClick={signOut}><LogOut size={15}/> Sign out</button></div> : <form className="auth-form" onSubmit={signIn}><h3>Welcome to Internet 2008</h3><p>Enter your name to start chatting. No email or password needed.</p><label>Your name<input maxLength={24} required value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="e.g. dialup_dreamer"/></label><button className="primary-button full" disabled={authBusy}>{authBusy?'Connecting…':'Start chatting'}</button>{authError&&<p className="auth-error">{authError}</p>}</form>}
