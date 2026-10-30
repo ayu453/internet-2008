@@ -647,6 +647,8 @@ function App() {
         <button role="menuitem" onClick={() => runDesktopCommand('display')}><Monitor size={14}/> Display Properties</button>
       </section>}
       <section className={`desktop-icons ${iconsArranged ? 'icons-arranged' : ''}`}>
+        <button className="desktop-icon" onClick={() => launchApp('computer')}><span className="app-icon computer-icon">🖥️</span><span>Computer</span></button>
+        {virtualFolders.filter(folder => folder.parent === 'root').map(folder => <button key={folder.id} className="desktop-icon" onClick={() => { setExplorerFolder(folder.id); setActiveApp('computer'); setWindowMinimized(false); }}><span className="app-icon computer-icon">📁</span><span>{folder.name}</span></button>)}
         <button className="desktop-icon" onClick={() => { setActiveApp('messenger'); setMessengerView('home'); setWindowMinimized(false); }}><span className="app-icon messenger-icon"><MessageCircle/></span><span>Messenger</span></button>
         <button className="desktop-icon" onClick={() => { setActiveApp('browser'); setWindowMinimized(false); }}><span className="app-icon browser-icon"><Globe/></span><span>Internet Explorer</span></button>
         <button className="desktop-icon" onClick={() => showNotice('Mystery file #001: “Someone is still online… even when the café is closed.” More clues coming soon.')}><span className="app-icon file-icon"><Terminal/></span><span>secret.txt</span></button>
