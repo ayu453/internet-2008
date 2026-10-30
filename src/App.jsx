@@ -3,7 +3,7 @@ import {
   Monitor, MessageCircle, Users, UserRound, Search, Settings, Minus, Square,
   X, Smile, Send, Volume2, VolumeX, Radio, ShieldAlert, UserPlus, LogOut,
   RefreshCw, Wifi, WifiOff, ChevronRight, Globe, Gamepad2, Moon, Heart,
-  Bell, UserCheck, Copy, LockKeyhole, Sparkles, Terminal, Coffee
+  Bell, UserCheck, UserMinus, Copy, LockKeyhole, Sparkles, Terminal, Coffee
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
 
@@ -425,6 +425,28 @@ function App() {
     showNotice(accept ? 'Friend added!' : 'Request declined.');
   };
 
+  const removeFriend = async (friend) => {
+    if (!session || !supabase || !friend?.id) return;
+    const friendName = friend.display_name || 'this friend';
+    if (!window.confirm(`Remove ${friendName} from your friends? Your private chat access will be revoked for both accounts. Existing messages will be retained but inaccessible.`)) return;
+    setDmBusy(true);
+    try {
+      const { error } = await supabase.rpc('remove_friend_and_revoke_chat', { p_friend_id: friend.id });
+      if (error) throw error;
+      setFriends(prev => prev.filter(item => item.id !== friend.id));
+      if (selectedFriend?.id === friend.id) {
+        setSelectedFriend(null);
+        setActiveConversationId(null);
+        setInput('');
+      }
+      showNotice(`${friendName} removed. Private chat access revoked.`);
+    } catch (error) {
+      showNotice(`Could not remove friend: ${error.message}`);
+    } finally {
+      setDmBusy(false);
+    }
+  };
+
   const openFriend = async (friend) => {
     if (!session || !supabase) return showNotice('Sign in to message your friends.');
     setDmBusy(true);
@@ -625,7 +647,7 @@ function App() {
             {friendSearch.trim().length>=2 && !friendSearchLoading && friendSearchResults.length===0 && <small className="muted">No matching profiles found.</small>}
             {friendRequests.length>0 && <><h3 className="section-label">FRIEND REQUESTS</h3>{friendRequests.map(req=><div className="friend-row" key={req.id}><div className="avatar small">{(req.person?.display_name||'?')[0]}</div><div className="friend-info"><b>{req.person?.display_name||'Internet Friend'}</b><small>Wants to be your friend</small></div><button className="accept-button" onClick={()=>respondFriend(req,true)}><UserCheck size={15}/></button><button className="decline-button" onClick={()=>respondFriend(req,false)}><X size={15}/></button></div>)}</>}
             <h3 className="section-label">YOUR FRIENDS · {friends.length}</h3>
-            {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" disabled={dmBusy} onClick={()=>openFriend(friend)}><MessageCircle size={15}/> {dmBusy ? 'Opening…' : 'Message'}</button></div>)}
+            {friends.map(friend=><div className="friend-row" key={friend.id}><div className="avatar small">{(friend.display_name||'?')[0]}</div><div className="friend-info"><b>{friend.display_name}</b><small>{friend.mood||'Available when online'}</small></div><button className="secondary-button" disabled={dmBusy} onClick={()=>openFriend(friend)}><MessageCircle size={15}/> {dmBusy ? 'Opening…' : 'Message'}</button><button type="button" className="decline-button" title={`Remove ${friend.display_name} from friends`} aria-label={`Remove ${friend.display_name} from friends`} disabled={dmBusy} onClick={()=>removeFriend(friend)}><UserMinus size={15}/></button></div>)}
             {friends.length===0 && friendRequests.length===0 && <div className="empty-state"><Users size={30}/><h3>Your buddy list is waiting.</h3><p>Sign in and add friends by their profile ID.</p></div>}
             </>}
           </div>}
