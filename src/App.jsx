@@ -42,6 +42,8 @@ function App() {
   const [showEmoji, setShowEmoji] = useState(false);
   const [status, setStatus] = useState('Available');
   const [notice, setNotice] = useState('');
+  const [notifications, setNotifications] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-notifications') || '[]'); } catch { return []; } });
+  const [showActivityCenter, setShowActivityCenter] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [randomState, setRandomState] = useState('idle');
   const [randomPartner, setRandomPartner] = useState(null);
@@ -65,10 +67,13 @@ function App() {
   const identity = session?.user?.id || profile?.id || 'guest';
 
   const showNotice = useCallback((msg) => {
+    setNotifications(prev => [{ id: localId(), message: msg, time: new Date().toISOString(), read: false }, ...prev].slice(0, 40));
     setNotice(msg);
     window.clearTimeout(showNotice.timer);
     showNotice.timer = window.setTimeout(() => setNotice(''), 3500);
   }, []);
+
+  useEffect(() => { localStorage.setItem('i2008-notifications', JSON.stringify(notifications)); }, [notifications]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -554,11 +559,14 @@ function App() {
         <div className="brand"><span className="brand-icon"><Monitor size={16}/></span><span>INTERNET <b>2008</b></span></div>
         <div className="top-center"><span className={`connection-dot ${connectionLabel === 'Connected' ? 'live' : ''}`}/>{connectionLabel}</div>
         <div className="top-actions">
+          <button className={`icon-button activity-trigger ${showActivityCenter ? 'selected' : ''}`} title="Activity Center" aria-label="Activity Center" onClick={() => setShowActivityCenter(v => !v)}><Bell size={16}/>{notifications.some(n => !n.read) && <i>{notifications.filter(n => !n.read).length}</i>}</button>
           <button className="icon-button" title="Toggle sound" onClick={() => setSoundOn(v => !v)}>{soundOn ? <Volume2 size={16}/> : <VolumeX size={16}/>}</button>
           <button className="icon-button" title="Settings" onClick={() => setShowSettings(v => !v)}><Settings size={16}/></button>
           <span className="clock">{nowTime()}</span>
         </div>
       </header>
+
+      {showActivityCenter && <section className="activity-center"><div className="activity-head"><div><b>Activity Center</b><small>Your Internet 2008 system log</small></div><button className="icon-button" onClick={() => setShowActivityCenter(false)} aria-label="Close activity center"><X size={15}/></button></div><div className="activity-tools"><span>{notifications.filter(n => !n.read).length} unread</span><button onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}>Mark all read</button><button onClick={() => setNotifications([])}>Clear all</button></div><div className="activity-list">{notifications.length ? notifications.map(item => <article key={item.id} className={`activity-item ${item.read ? '' : 'unread-item'}`}><span className="activity-icon"><Bell size={14}/></span><div><p>{item.message}</p><time>{new Date(item.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time></div><button aria-label="Mark notification read" onClick={() => setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n))}>✓</button></article>) : <div className="activity-empty"><Bell size={25}/><b>All quiet on the internet.</b><span>System activity will show up here.</span></div>}</div></section>}
 
       <section className="desktop-icons">
         <button className="desktop-icon" onClick={() => { setActiveApp('messenger'); setWindowMinimized(false); }}><span className="app-icon messenger-icon"><MessageCircle/></span><span>Messenger</span></button>
