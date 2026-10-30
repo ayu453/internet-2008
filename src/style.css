@@ -36,3 +36,13 @@
 
 /* Desktop gadgets belong to the wallpaper layer, behind the active application window. */
 .desktop-gadgets{z-index:0}
+
+
+/* Windows 2008 desktop context menu */
+.desktop-context-menu{position:fixed;z-index:40;width:204px;padding:5px;background:linear-gradient(180deg,#fbfdff 0%,#e9f1f9 100%);border:1px solid #7189a5;border-radius:4px;box-shadow:2px 4px 14px #10243b66;color:#23364c;font:12px Tahoma,Arial,sans-serif}
+.desktop-context-menu button{display:flex;align-items:center;gap:9px;width:100%;min-height:31px;padding:5px 9px;border:0;border-radius:2px;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+.desktop-context-menu button svg{color:#456b91}
+.desktop-context-menu button:hover{background:linear-gradient(#e4f2ff,#c9e3fa);outline:1px solid #91b9df}
+.desktop-context-separator{height:1px;margin:4px 3px;background:#bdcbd9;border-bottom:1px solid #fff}
+.desktop-icons.icons-arranged{display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.desktop-icons.icons-arranged .desktop-icon{min-height:65px}
