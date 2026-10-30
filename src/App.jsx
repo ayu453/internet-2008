@@ -475,7 +475,7 @@ function App() {
       if (error) throw error;
       setSelectedFriend(friend);
       setActiveConversationId(data);
-      setActiveApp('friends');
+      setActiveApp('messenger'); setMessengerView('friends');
       setInput('');
     } catch (error) {
       showNotice(`Could not open private chat: ${error.message}`);
@@ -640,7 +640,7 @@ function App() {
         <button role="menuitem" onClick={() => runDesktopCommand('display')}><Monitor size={14}/> Display Properties</button>
       </section>}
       <section className={`desktop-icons ${iconsArranged ? 'icons-arranged' : ''}`}>
-        <button className="desktop-icon" onClick={() => { setActiveApp('messenger'); setWindowMinimized(false); }}><span className="app-icon messenger-icon"><MessageCircle/></span><span>Messenger</span></button>
+        <button className="desktop-icon" onClick={() => { setActiveApp('messenger'); setMessengerView('home'); setWindowMinimized(false); }}><span className="app-icon messenger-icon"><MessageCircle/></span><span>Messenger</span></button>
         <button className="desktop-icon" onClick={() => { setActiveApp('browser'); setWindowMinimized(false); }}><span className="app-icon browser-icon"><Globe/></span><span>Internet Explorer</span></button>
         <button className="desktop-icon" onClick={() => showNotice('Mystery file #001: “Someone is still online… even when the café is closed.” More clues coming soon.')}><span className="app-icon file-icon"><Terminal/></span><span>secret.txt</span></button>
       </section>
