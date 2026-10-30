@@ -45,6 +45,8 @@ function App() {
   const [notifications, setNotifications] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-notifications') || '[]'); } catch { return []; } });
   const [showActivityCenter, setShowActivityCenter] = useState(false);
   const [showStartMenu, setShowStartMenu] = useState(false);
+  const [desktopContext, setDesktopContext] = useState(null);
+  const [iconsArranged, setIconsArranged] = useState(false);
   const [showGadgetPicker, setShowGadgetPicker] = useState(false);
   const [visibleGadgets, setVisibleGadgets] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-gadgets-visible') || '[\"clock\",\"calendar\",\"notes\",\"feed\"]'); } catch { return ['clock','calendar','notes','feed']; } });
   const [gadgetPositions, setGadgetPositions] = useState(() => { try { return JSON.parse(localStorage.getItem('i2008-gadgets-positions') || '{}'); } catch { return {}; } });
@@ -557,6 +559,20 @@ function App() {
   }, [session, activeConversationId, activeApp, selectedFriend, nickname, showNotice]);
 
 
+  const openDesktopContext = (event) => {
+    if (event.target.closest('.app-window, .taskbar, .top-strip, .activity-center, .gadget-picker, .desktop-gadget, .desktop-gadget-toolbar, .start-menu')) return;
+    event.preventDefault(); setShowStartMenu(false);
+    setDesktopContext({ x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 245) });
+  };
+  const runDesktopCommand = (command) => {
+    setDesktopContext(null);
+    if (command === 'refresh') { setShowGadgetPicker(false); showNotice('Desktop refreshed.'); }
+    else if (command === 'arrange') { setIconsArranged(value => !value); showNotice(iconsArranged ? 'Desktop icon layout restored.' : 'Desktop icons arranged.'); }
+    else if (command === 'folder') showNotice('New Folder created. Folder management is coming next.');
+    else if (command === 'personalize' || command === 'display') setShowSettings(true);
+    else if (command === 'gadgets') setShowGadgetPicker(true);
+  };
+
   const launchApp = (appId) => {
     setActiveApp(appId); setWindowMinimized(false); setShowStartMenu(false);
     setRecentApps(prev => [appId, ...prev.filter(id => id !== appId)].slice(0, 4));
@@ -590,7 +606,7 @@ function App() {
     activeApp === 'profile' ? 'My Profile' : activeApp === 'browser' ? 'Internet Explorer' : 'Internet 2008';
 
   return (
-    <main className="desktop">
+    <main className="desktop" onContextMenu={openDesktopContext} onClick={(event) => { if (desktopContext && !event.target.closest(".desktop-context-menu")) setDesktopContext(null); }}>
       <div className="desktop-wallpaper" />
       <header className="top-strip">
         <div className="brand"><span className="brand-icon"><Monitor size={16}/></span><span>INTERNET <b>2008</b></span></div>
@@ -613,7 +629,17 @@ function App() {
         {visibleGadgets.includes('notes') && <article className="desktop-gadget notes-gadget" style={gadgetStyle('notes',478)} draggable onDragEnd={e=>moveGadget('notes',e)}><div className="gadget-grip"><span>STICKY NOTES</span><button title="Hide notes" onClick={()=>setVisibleGadgets(p=>p.filter(x=>x!=='notes'))}>×</button></div><textarea draggable={false} value={stickyNote} onChange={e=>setStickyNote(e.target.value)} placeholder="Write a little reminder…"/></article>}
         {visibleGadgets.includes('feed') && <article className="desktop-gadget feed-gadget" style={gadgetStyle('feed',650)} draggable onDragEnd={e=>moveGadget('feed',e)}><div className="gadget-grip"><span>INTERNET FEED</span><button title="Hide feed" onClick={()=>setVisibleGadgets(p=>p.filter(x=>x!=='feed'))}>×</button></div><div className="feed-line">✦ Welcome back to 2008</div><div className="feed-line">♫ Your friends are just a click away</div><div className="feed-line">⌁ The internet never sleeps…</div></article>}
       </section>
-      <section className="desktop-icons">
+      {desktopContext && <section className="desktop-context-menu" style={{ left: desktopContext.x, top: desktopContext.y }} onClick={e => e.stopPropagation()} role="menu" aria-label="Desktop options">
+        <button role="menuitem" onClick={() => runDesktopCommand('refresh')}><RefreshCw size={14}/> Refresh</button>
+        <div className="desktop-context-separator"/>
+        <button role="menuitem" onClick={() => runDesktopCommand('arrange')}><Monitor size={14}/> {iconsArranged ? 'Restore Icon Layout' : 'Arrange Icons'}</button>
+        <button role="menuitem" onClick={() => runDesktopCommand('folder')}><span>📁</span> New Folder</button>
+        <div className="desktop-context-separator"/>
+        <button role="menuitem" onClick={() => runDesktopCommand('personalize')}><Sparkles size={14}/> Personalize</button>
+        <button role="menuitem" onClick={() => runDesktopCommand('gadgets')}><Sparkles size={14}/> Gadgets</button>
+        <button role="menuitem" onClick={() => runDesktopCommand('display')}><Monitor size={14}/> Display Properties</button>
+      </section>}
+      <section className={`desktop-icons ${iconsArranged ? 'icons-arranged' : ''}`}>
         <button className="desktop-icon" onClick={() => { setActiveApp('messenger'); setWindowMinimized(false); }}><span className="app-icon messenger-icon"><MessageCircle/></span><span>Messenger</span></button>
         <button className="desktop-icon" onClick={() => { setActiveApp('rooms'); setWindowMinimized(false); }}><span className="app-icon rooms-icon"><Globe/></span><span>Chatrooms</span></button>
         <button className="desktop-icon" onClick={() => { setActiveApp('random'); setWindowMinimized(false); }}><span className="app-icon random-icon"><Search/></span><span>Find Stranger</span></button>
